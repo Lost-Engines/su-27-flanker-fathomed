@@ -1,0 +1,47 @@
+<section class="hero">
+  <div class="hero-inner">
+    <div>
+      <p class="eyebrow">Lost Engines · Reverse engineering</p>
+      <h1>Su-27 Flanker<span>Fathomed</span></h1>
+      <p>We’ve rebuilt Su-27 Flanker in C++. Explore its models, follow a mission across the map, or read how we worked it out.</p>
+      <div class="actions">
+        <a class="button" href="#explore">Explore the game <span aria-hidden="true">↗</span></a>
+        <a class="button secondary" href="story/">Read the investigation</a>
+      </div>
+    </div>
+    <figure>
+      <a href="models/#su27"><img src="images/hero.png" width="1600" height="1000" alt="A recovered turquoise Su-27 model, viewed from above and ahead." fetchpriority="high"></a>
+      <figcaption>The Su-27 in our model viewer, assembled from the original geometry.</figcaption>
+    </figure>
+  </div>
+</section>
+<section class="home-section" id="explore" aria-labelledby="explore-title">
+  <div class="section-heading"><h2 id="explore-title">Take a closer look</h2><p>Aircraft, scenery and instruments from Squadron Commander’s Edition 1.5.</p></div>
+  <div class="exhibit-cards">
+    <a class="exhibit-card" href="models/">
+      <img src="images/model-exhibits.png" width="1440" height="720" alt="The Su-27, an ejection seat and a pilot beneath an open parachute." loading="lazy">
+      <div><p class="eyebrow">18 models · Animation controls</p><h3>Models and moving parts <span aria-hidden="true">↗</span></h3><p>Open the landing gear, sweep the wings, deploy a parachute, or turn the ships and vehicles around.</p></div>
+    </a>
+    <a class="exhibit-card" href="missions/">
+      <img src="images/mission-preview.png" width="960" height="600" alt="A planned flight route over Flanker’s Crimea terrain." loading="lazy">
+      <div><p class="eyebrow">Eight missions · Original briefings</p><h3>Across the map <span aria-hidden="true">↗</span></h3><p>Read the briefings, select an aircraft group and follow its route across the recovered landscape.</p></div>
+    </a>
+    <a class="exhibit-card" href="cockpit/">
+      <img src="images/original-cockpit.png" width="640" height="480" alt="The original Su-27 cockpit, looking along a runway." class="pixel" loading="lazy">
+      <div><p class="eyebrow">Artwork · Symbols · Mirror masks</p><h3>Inside the cockpit <span aria-hidden="true">↗</span></h3><p>Look through the stored compass frames, HUD symbols and other pieces that make up the instrument panel.</p></div>
+    </a>
+  </div>
+</section>
+<section class="home-section investigation-link" aria-labelledby="investigation-title">
+  <div>
+    <p class="eyebrow">The investigation</p>
+    <h2 id="investigation-title">Reconstructing Su-27 Flanker</h2>
+    <p>Recovering the data formats and flight model, then checking the new code against the original. Four damaged missions, an older landscape kept for recordings, and a car with disappearing windows gave us plenty to work out.</p>
+    <a class="button" href="story/">Read the investigation <span aria-hidden="true">→</span></a>
+  </div>
+  <a class="investigation-image" href="story/#the-car-with-the-disappearing-windows"><img src="images/window-order.svg" width="960" height="370" loading="lazy" alt="Why the car’s windows disappear: the original drawing order paints a buried window over its body panel."></a>
+</section>
+<section class="home-section play-links" aria-labelledby="play-title">
+  <div><h2 id="play-title">Fly it again</h2><p>Flanker C++ follows the original game. Redux adds configurable resolution, field of view and other improvements.</p></div>
+  <div class="actions"><a class="button secondary" href="https://github.com/Lost-Engines/su-27-flanker-cpp">Flanker C++ <span aria-hidden="true">↗</span></a><a class="button secondary" href="https://github.com/Lost-Engines/su-27-flanker-redux">Flanker Redux <span aria-hidden="true">↗</span></a></div>
+</section>

@@ -67,5 +67,13 @@
       "output": "epilot.png"
     }
   ],
-  "composition": "model-exhibits.png: su27.png, chear.png, epilot.png placed left-to-right, unchanged pixels."
+  "composition": "model-exhibits.png: su27.png, chear.png, epilot.png placed left-to-right, unchanged pixels.",
+  "mission_preview": {
+    "output": "mission-preview.png",
+    "source": "Browser mission viewer",
+    "mission": "t_ftoff",
+    "width": 960,
+    "height": 600,
+    "renderer_sha256": "b42bd7274aa379a746f1168574279969e2eb009a3be204d313b9671764b241c9"
+  }
 }

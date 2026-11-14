@@ -12,6 +12,17 @@ const ready=async route=>{await page.goto(base+route);await page.waitForLoadStat
 const settled=async()=>{await page.waitForFunction(()=>window.flankerModelViewer&&!window.flankerModelViewer.stats.missing?.length&&document.getElementById('view').dataset.ready==='true');await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));};
 const fits=async()=>assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Horizontal overflow: '+page.url());
 try{
+ await ready('');
+ assert.equal(await page.locator('article').count(),0,'Landing page should index the exhibits and article');
+ assert.deepEqual(await page.locator('.exhibit-card').evaluateAll(links=>links.map(a=>a.getAttribute('href'))),['models/','missions/','cockpit/']);
+ await page.locator('.investigation-link .button').click();
+ await page.waitForURL(base+'story/');
+ assert((await page.locator('article').innerText()).includes('The car with the disappearing windows'));
+ await ready('#the-car-with-the-disappearing-windows');
+ await page.waitForURL(base+'story/#the-car-with-the-disappearing-windows');
+ await ready('#explore');
+ assert.equal(new URL(page.url()).pathname,new URL(base).pathname,'Exhibit anchor should stay on the overview');
+ console.log('Overview cards, separate article and existing article-section links passed.');
  await ready('models/');await settled();assert.equal(await page.locator('#perturb').isChecked(),false,'Reduced motion ignored');
  const models=await page.locator('#model-select option').evaluateAll(o=>o.map(x=>x.value));assert.equal(models.length,18);
  for(const name of models){await page.locator('#model-select').selectOption(name);await settled();assert(await page.evaluate(()=>window.flankerModelViewer.stats.primitives>0),`Empty default model: ${name}`);
@@ -33,8 +44,18 @@ try{
  const sets=await page.locator('#cockpit-tabs button').evaluateAll(b=>b.map(x=>x.dataset.name));for(const name of sets){await page.locator(`#cockpit-tabs button[data-name="${name}"]`).click();const max=Number(await page.locator('#frame').getAttribute('max'));for(let index=0;index<=max;index++){await page.locator('#frame').evaluate((e,i)=>{e.value=i;e.dispatchEvent(new Event('input'));},index);await page.waitForFunction(()=>{const image=document.getElementById('component-image');return image.complete&&image.naturalWidth>0;});}}
  await page.locator('#magnification').selectOption('1');assert.equal(await page.locator('#magnification').inputValue(),'1');
  console.log('All seven cockpit collections and their stored component images passed.');
- for(const width of [390,768,1440]){await page.setViewportSize({width,height:950});for(const route of ['','models/','missions/','cockpit/','sources/']){await ready(route);await fits();assert.equal(await page.locator('h1').count(),1);assert(await page.locator('main').isVisible());if(process.env.SCREENSHOT_DIR&&width!==768){await mkdir(process.env.SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:`${process.env.SCREENSHOT_DIR}/${route.replace('/','')||'story'}-${width}.png`,fullPage:route!=='',animations:'disabled'});}}}
- const nojs=await browser.newPage({javaScriptEnabled:false});await nojs.goto(base);assert((await nojs.locator('article').innerText()).includes('The car with the disappearing windows'));await nojs.goto(base+'models/');assert(await nojs.locator('noscript').isVisible());await nojs.close();
+ for(const width of [390,768,1440]){await page.setViewportSize({width,height:950});for(const route of ['','story/','models/','missions/','cockpit/','sources/']){await ready(route);await fits();assert.equal(await page.locator('h1').count(),1);assert(await page.locator('main').isVisible());if(process.env.SCREENSHOT_DIR&&width!==768){await mkdir(process.env.SCREENSHOT_DIR,{recursive:true});await page.locator('img').evaluateAll(images=>Promise.all(images.map(image=>{image.loading='eager';return image.decode();})));await page.screenshot({path:`${process.env.SCREENSHOT_DIR}/${route.replace('/','')||'overview'}-${width}.png`,fullPage:route!=='story/',animations:'disabled'});}}}
+ for(const scheme of ['light','dark']){
+  await page.emulateMedia({colorScheme:scheme});
+  for(const route of ['','story/','models/','missions/','cockpit/','sources/']){
+    await ready(route);
+    assert(await page.evaluate(()=>{
+      const rgb=getComputedStyle(document.body).backgroundColor.match(/\d+/g).slice(0,3).map(Number);
+      return Math.max(...rgb)<65;
+    }),`Page should remain dark with ${scheme} system settings: ${route}`);
+  }
+ }
+ const nojs=await browser.newPage({javaScriptEnabled:false});await nojs.goto(base+'story/');assert((await nojs.locator('article').innerText()).includes('The car with the disappearing windows'));await nojs.goto(base+'models/');assert(await nojs.locator('noscript').isVisible());await nojs.close();
  assert.deepEqual(errors,[],'Browser exceptions');assert.deepEqual(failed,[],'Failed asset requests');
- console.log('Desktop/tablet/mobile layouts, reduced motion, no-JavaScript article and project-prefix URLs passed.');
+ console.log('Desktop/tablet/mobile layouts, dark pages under both system themes, reduced motion, no-JavaScript article and project-prefix URLs passed.');
 }finally{await browser.close();server.close();}

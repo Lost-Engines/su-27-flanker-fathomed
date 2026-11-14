@@ -1,11 +1,11 @@
 const $=id=>document.getElementById(id);
 const descriptions={
  'hkurs.dat':'The compass ring uses six stored bitmap frames, combined in the game with rotated labels and vector needles. Change the frame to inspect the individual drawings.',
- 'hsu27hud.dat':'Stored HUD artwork is mixed with lines and values drawn by code. These components include aiming and steering symbols; they are not a complete live HUD by themselves.',
+ 'hsu27hud.dat':'Stored HUD artwork is mixed with lines and values drawn by code. These components include aiming and steering symbols.',
  'tv.dat':'The target display has 48 component entries in the retail version. Some are only a few pixels across, so enlargement is useful here.',
  'mirror1.bin':'The centre mirror’s scanline mask. The original renders another view of the world and copies pixels only inside these spans.',
  'mirror2.bin':'The left mirror’s mask is tall and narrow. Its stored orientation and position determine how the reflected scene is placed.',
- 'mirror3.bin':'The right mirror has its own mask and camera setup, rather than being a flipped copy of a static picture.',
+ 'mirror3.bin':'The right mirror has its own mask and camera setup.',
  'helmet.dat':'A one-bit helmet-sight symbol. The drawing caller supplies its colour.'
 };
 try{
