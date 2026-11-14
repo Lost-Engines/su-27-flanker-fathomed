@@ -1,0 +1,71 @@
+{
+  "renderer_sha256": "4f882dcf2578bd1e6a688299847ee5c1ef7d37644a3426cb4d2b29551d552d2a",
+  "captures": [
+    {
+      "name": "su27",
+      "width": 1600,
+      "height": 1000,
+      "camera": [
+        0.85,
+        0.42,
+        1.5
+      ],
+      "parameters": {
+        "0": 1,
+        "4": 0,
+        "13": 4096
+      },
+      "output": "hero.png"
+    },
+    {
+      "name": "su27",
+      "width": 720,
+      "height": 720,
+      "camera": [
+        0.9,
+        0.4,
+        1.12
+      ],
+      "parameters": {
+        "0": 1,
+        "4": 16384,
+        "13": 4096
+      },
+      "output": "su27.png"
+    },
+    {
+      "name": "chear",
+      "width": 360,
+      "height": 720,
+      "camera": [
+        0.85,
+        0.15,
+        1.65
+      ],
+      "parameters": {
+        "0": 1,
+        "1": 4096,
+        "2": 0,
+        "3": 26
+      },
+      "output": "chear.png"
+    },
+    {
+      "name": "epilot",
+      "width": 360,
+      "height": 720,
+      "camera": [
+        0.85,
+        0.15,
+        1.65
+      ],
+      "parameters": {
+        "1": 4096,
+        "2": 0,
+        "3": 38
+      },
+      "output": "epilot.png"
+    }
+  ],
+  "composition": "model-exhibits.png: su27.png, chear.png, epilot.png placed left-to-right, unchanged pixels."
+}
