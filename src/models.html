@@ -2,6 +2,7 @@
   <noscript>The interactive models need JavaScript and WebGL 2. You can also read the <a href="../story/">illustrated article</a>.</noscript>
   <div class="toolbar">
     <label for="model-select">Model</label><select id="model-select"></select>
+    <label id="edition-choice" hidden>Edition <select id="edition"><option value="sce">Windows SCE 1.5</option><option value="dos">DOS 1.1</option></select></label>
     <span class="grow"></span><button id="reset">Reset view</button><button id="defaults">Reset model</button>
   </div>
   <div class="model-workbench">
@@ -13,7 +14,7 @@
     <div class="model-display">
       <div class="stage">
         <h2 class="stage-heading" id="title">Loading model…</h2>
-        <canvas id="view" tabindex="0" data-model-root="../data/models/" data-fit-silhouette data-preview-defaults aria-label="Interactive model. Drag or use the arrow keys to rotate. Scroll or use plus and minus to zoom."></canvas>
+        <canvas id="view" tabindex="0" data-model-root="../data/models/" data-dos-root="../data/models/dos/" data-fit-silhouette data-preview-defaults aria-label="Interactive model. Drag or use the arrow keys to rotate. Scroll or use plus and minus to zoom."></canvas>
         <img id="model-fallback" src="../images/hero.png" width="1600" height="1000" alt="Su-27 model preview">
         <div class="stage-tools" aria-label="Camera controls">
           <button data-camera="yaw" data-amount="-.15" aria-label="Rotate left">←</button><button data-camera="yaw" data-amount=".15" aria-label="Rotate right">→</button>
@@ -24,7 +25,7 @@
       </div>
       <div class="toolbar">
         <label><input type="checkbox" id="night"> Night lights</label><label><input type="checkbox" id="spin"> Turntable</label>
-        <label><input type="checkbox" id="perturb" checked> Canopy and effect motion</label>
+        <label><input type="checkbox" id="perturb" checked> Flag, canopy and effect motion</label>
         <label><input type="checkbox" id="smooth" checked> Smooth shading</label><label><input type="checkbox" id="edges"> Show edges</label>
         <label id="effect-framing" hidden><input id="fit-effect" type="checkbox" checked> Fit effect while scrubbing</label>
         <input id="distance" type="number" value="0" hidden>

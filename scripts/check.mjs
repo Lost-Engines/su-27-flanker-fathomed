@@ -32,6 +32,20 @@ for(const model of catalog.models){
     if(o.value)assert(names.has(catalog.registry[o.value]),`Missing attachment ${o.value}`);
   }
 }
+const dos=catalog.dos_patterns, dosFiles=new Set(dos.files), available=new Set([...dos.files,...dos.shared]);
+assert.equal(Object.keys(dos.models).length,33);
+for (const name of dos.files) assert(all.has(path.join(dist,'data/models/dos',name+'.json')), 'Missing DOS mesh '+name);
+for (const name of dos.shared) assert(names.has(name) && !dosFiles.has(name), 'Shared DOS attachment '+name);
+for (const name of Object.keys(dos.models)) {
+  assert(dosFiles.has(name));
+  const shape=JSON.parse(await readFile(path.join(dist,'data/models/dos',name+'.json'),'utf8'));
+  const controls=dos.parameter_controls[name].controls;
+  assert.deepEqual(controls.map(d=>d.id),parameterDefinitions(shape,{registry:dos.registry}).controls.map(d=>d.id),name+' DOS controls');
+  for (const d of controls) for (const o of d.options || [])
+    if(o.value) assert(available.has(dos.registry[o.value]),'Missing DOS attachment '+o.label);
+  for (const node of shape.nodes) for (const face of node.surfaces)
+    if (face.kind===17 && face.reference) assert(available.has(dos.registry[face.reference]),name+' fixed attachment');
+}
 for (const name of ['tu95', 'tu95c', 'tu142']) {
   const shape = JSON.parse(await readFile(path.join(dist, 'data/models', name + '.json'), 'utf8'));
   const raw = parameterDefinitions(shape, {registry: catalog.registry}).controls;

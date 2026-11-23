@@ -1,5 +1,5 @@
 // Classification is generated from the equipment tables and inspected models.
-export function createModelBrowser(catalog, onSelect, root = '../../extracted/shapes/win_1_5/') {
+export function createModelBrowser(catalog, onSelect, root, parameterCount) {
   const list = document.getElementById('models');
   const search = document.getElementById('search');
   const category = document.getElementById('category');
@@ -54,7 +54,7 @@ export function createModelBrowser(catalog, onSelect, root = '../../extracted/sh
           'SCE surface-unit table; role from model geometry'].includes(model.classification_source) && model.display_name;
         name.textContent = identified || model.name;
         heading.append(name);
-        const parameters = model.parameter_count + (model.motion_clocks?.length || 0);
+        const parameters = parameterCount(model);
         if (parameters > 0) {
           const badge = document.createElement('span');
           badge.className = 'model-parameter-count';

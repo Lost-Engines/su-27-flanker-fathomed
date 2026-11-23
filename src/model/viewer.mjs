@@ -3,17 +3,50 @@ import {depthLayers} from './depth.mjs';
 import {parameterDefinitions, parameterValue} from './parameter-definitions.mjs';
 import {renderParameters} from './parameters.mjs';
 import {createMotionControls, restoreMotionCommands} from './motion.mjs';
-import{identity,point,direction,dot,sub,cross,normalise,transform,random,triangles,surfaceOrder}from'./shape.mjs';
+import{identity,point,direction,dot,sub,cross,normalise,transform,random,triangles,patternedTriangles,surfaceOrder}from'./shape.mjs';
 const $=id=>document.getElementById(id),canvas=$('view'),gl=canvas.getContext('webgl2',{antialias:true,preserveDrawingBuffer:true});
 if(!gl)throw new Error('This viewer needs WebGL 2.');
-const root=canvas.dataset.modelRoot||'../../extracted/shapes/win_1_5/',catalog=await fetch(root+'viewer.json').then(r=>{if(!r.ok)throw new Error('The model catalogue could not be loaded.');return r.json()}),models=new Map(),pending=new Map();
+const root = canvas.dataset.modelRoot || '../../extracted/shapes/win_1_5/';
+const response = await fetch(root + 'viewer.json');
+if (!response.ok) throw new Error('The model catalogue could not be loaded.');
+const sce = await response.json();
+const dos = sce.dos_patterns;
+const editions = {
+  sce: {catalog: sce, root, models: new Map(), pending: new Map()},
+  dos: {catalog: {...sce, ...dos, models: sce.models, motion_repairs: {}, surface_overlays: {}, surface_supports: {}},
+        root: canvas.dataset.dosRoot || '../../extracted/shapes/dos_1_1/', shared: new Set(dos.shared),
+        models: new Map(), pending: new Map()}
+};
+let preferredEdition = new URL(location.href).searchParams.get('edition') === 'dos' ? 'dos' : 'sce';
+let library = editions.sce, catalog = sce;
 const shader=(type,src)=>{let s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s));return s};
 const program=gl.createProgram();gl.attachShader(program,shader(gl.VERTEX_SHADER,`#version 300 es
 in vec3 position;in vec3 colour;in float pattern;in float depthBias;in float depthBack;uniform mat4 view;uniform float pointSize;out vec3 c;flat out int p;flat out float backLayers;void main(){gl_Position=view*vec4(position,1.);gl_Position.z-=depthBias*gl_Position.w;gl_PointSize=pointSize;c=colour;p=int(pattern);backLayers=depthBack;}`));
 gl.attachShader(program,shader(gl.FRAGMENT_SHADER,`#version 300 es
-precision highp float;precision highp int;in vec3 c;flat in int p;flat in float backLayers;uniform int masks[128];uniform bool roundLight;out vec4 pixel;void main(){if(roundLight && distance(gl_PointCoord,vec2(.5))>.5)discard;float slope=max(abs(dFdx(gl_FragCoord.z)),abs(dFdy(gl_FragCoord.z)));if(p>=0){ivec2 q=ivec2(gl_FragCoord.xy);int row=masks[p*8+(q.y&7)];if((row&(128>>(q.x&7)))==0)discard;}gl_FragDepth=gl_FragCoord.z+backLayers*.5*slope;pixel=vec4(c,1.);}`));
+precision highp float;
+precision highp int;
+in vec3 c;
+flat in int p;
+flat in float backLayers;
+uniform int masks[128];
+uniform bool roundLight;
+uniform float frameHeight, patternPixel;
+out vec4 pixel;
+void main() {
+  float slope = max(abs(dFdx(gl_FragCoord.z)), abs(dFdy(gl_FragCoord.z)));
+  if (roundLight && distance(gl_PointCoord, vec2(.5)) > .5) discard;
+  if (p >= 0) {
+    ivec2 q = ivec2(vec2(gl_FragCoord.x, frameHeight - gl_FragCoord.y) / patternPixel);
+    int row = masks[(p & 15) * 8 + (q.y & 3)];
+    bool foreground = (row & (1 << (q.x & 3))) != 0;
+    if (foreground == (p >= 16)) discard;
+  }
+  gl_FragDepth = gl_FragCoord.z + backLayers * .5 * slope;
+  pixel = vec4(c, 1.);
+}`));
 gl.linkProgram(program);if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(program));gl.useProgram(program);
 const pointSize = gl.getUniformLocation(program, 'pointSize'), roundLight = gl.getUniformLocation(program, 'roundLight');
+const frameHeight = gl.getUniformLocation(program, 'frameHeight'), patternPixel = gl.getUniformLocation(program, 'patternPixel');
 const buffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buffer);for(let[name,size,offset]of[['position',3,0],['colour',3,12],['pattern',1,24],['depthBias',1,28],['depthBack',1,32]]){let a=gl.getAttribLocation(program,name);gl.enableVertexAttribArray(a);gl.vertexAttribPointer(a,size,gl.FLOAT,false,36,offset)}
 gl.uniform1iv(gl.getUniformLocation(program,'masks'),new Int32Array(catalog.patterns.flat()));gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.clearColor(.055,.085,.12,1);
 let selected,parameters=[],bounds={center:[0,0,0],radius:1000},yaw=.85,pitch=.35,zoom=1,request=0,lastTime=0,dirty=true,rotateDrag=null,stats={},phase=1,lightingTick=0;
@@ -31,8 +64,30 @@ function lightMaterial(value,p,g){
   if(value&32768)value=(value&16384?g:p)[value&16383]||0;
   return catalog.palette[value&15].map(v=>v/255);
 }
-function material(value,normal,p,g){if(value===65535)return null;if(value&32768)value=(value&16384?g:p)[value&16383]||0;let family=value&31,level=(value&3840)>>4;if((value&16)||!level)return catalog.palette[family%16].map(v=>v/255);let intensity=12800;if(value&16384)intensity+=Math.max(0,dot(normal,normalise([-1,1,0])))*15237;let light=Math.max(0,Math.min(255,Math.trunc(level*intensity/16384)));if(family===14)family=7;else{family&=7;if(family===7)family=0}let index=family?((family+2)*16+(light>>4)):(16+(light>>3));return catalog.palette[index].map(v=>v/255)}
-async function loadModel(name){if(models.has(name))return models.get(name);if(!pending.has(name))pending.set(name,fetch(root+name+'.json').then(r=>{if(!r.ok)throw new Error(`Missing shape ${name}`);return r.json()}).then(m=>{restoreMotionCommands(m,catalog.motion_repairs?.[name]);m.lookup=new Map(m.nodes.map(n=>[n.offset,n]));models.set(name,m);pending.delete(name);dirty=true;return m}));return pending.get(name)}
+function resolveColour(value, p, g) {
+  if (value === 65535) return 65535;
+  return value & 32768 ? ((value & 16384 ? g : p)[value & 16383] ?? 0) & 65535 : value;
+}
+function material(value,normal,p,g){value=resolveColour(value,p,g);if(value===65535)return null;let family=value&31,level=(value&3840)>>4;if((value&16)||!level)return catalog.palette[family%16].map(v=>v/255);let intensity=12800;if(normal&&(value&16384))intensity+=Math.max(0,dot(normal,normalise([-1,1,0])))*15237;let light=Math.max(0,Math.min(255,Math.trunc(level*intensity/16384)));if(family===14)family=7;else{family&=7;if(family===7)family=0}let index=family?((family+2)*16+(light>>4)):(16+(light>>3));return catalog.palette[index].map(v=>v/255)}
+function loadModel(name, source = library) {
+  const {models, pending} = source;
+  if (models.has(name)) return Promise.resolve(models.get(name));
+  if (!pending.has(name)) {
+    const directory = source.shared?.has(name) ? root : source.root;
+    const request = fetch(directory + name + '.json').then(response => {
+      if (!response.ok) throw new Error('Missing shape ' + name);
+      return response.json();
+    }).then(model => {
+      restoreMotionCommands(model, source.catalog.motion_repairs?.[name]);
+      model.lookup = new Map(model.nodes.map(n => [n.offset, n]));
+      models.set(name, model);
+      dirty = true;
+      return model;
+    }).finally(() => pending.delete(name));
+    pending.set(name, request);
+  }
+  return pending.get(name);
+}
 // Painter lists can redraw the same attachment several times. This viewer
 // uses a depth buffer, so visit each surface once, at its last
 // position, so repeated flag draws cannot get different random poses and put
@@ -42,7 +97,19 @@ function depthSurfaceOrder(node, pose, eye, count) {
   for(let i=order.length-1;i>=0;i--)if(!seen.has(order[i])){seen.add(order[i]);unique.push(order[i])}
   return unique.reverse();
 }
-function gather(eye){let result=[],missing=new Set(),g=globalParameters(),rng=random($('perturb').checked?phase:1),parts=0,hidden=0,distance=+$('distance').value;function visit(model,offset,m,p,depth,attachmentOverlay=null){if(depth>40){missing.add('cyclic graph');return}let n=model.lookup.get(offset);if(!n){missing.add(`node ${offset}`);return}parts++;let count=n.surfaces.length,flags=6;if(n.lod.length){let eligible=n.lod.filter(l=>l.threshold>distance),l=eligible.at(-1)||((depth===0)?n.lod[0]:null);if(!l)return;count=l.surfaces;flags=l.flags}let vertices=n.vertices.map(v=>point(m,v.map(x=>x*(2**n.coordinate_shift)))),attachmentRule=catalog.attachment_overlays?.[model.name]?.[n.name],overlayHost=attachmentRule?.mesh&&attachmentRule.models.includes(catalog.registry[p[attachmentRule.parameter]]);for(let i of depthSurfaceOrder(n,m,eye,count)){let s=n.surfaces[i];if(s.kind===4&&!(flags&1))continue;if(s.kind<=1&&!(flags&2))continue;if(s.kind===6&&!(g[0]&1))continue;if(s.kind>=16){if(!s.reference)continue;let t=transform(s,n.coordinate_shift,p,g,catalog.sine,m,rng);if(!t){hidden++;continue}if(s.kind===16)visit(model,s.node,t,t.parameters,depth+1,attachmentOverlay);else{let index=s.kind===18?t.parameters[s.reference&255]:s.reference,name=catalog.registry[index];if(!index)continue;if(!name){missing.add(`registry ${index}`);continue}if(models.has(name)){let rule=attachmentRule,support=attachmentOverlay;if(s.kind===18&&rule?.parameter===(s.reference&255)&&rule.models.includes(name)){if(rule.mesh){let normal=normalise(direction(t.basis,rule.normal)),mesh=n.surfaces.slice(0,count).filter(face=>(face.kind===2||(face.kind===4&&(flags&1)))&&face.colour!==65535&&dot(normalise(direction(m.basis,face.normal)),normal)>.5).flatMap(face=>{let indices=face.vertex_normals?face.indices.slice(0,-1):face.indices,points=indices.map(i=>vertices[i]);return triangles(points).map(ids=>ids.map(i=>points[i]))});support={mesh,normal,reach:rule.reach}}else support={plane:n.surfaces[rule.surface].indices.map(i=>vertices[i])}}visit(models.get(name),0,t,s.kind===18?models.get(name).nodes[0].parameters.concat(Array(256).fill(0)):t.parameters,depth+1,support);}else{missing.add(name);loadModel(name).catch(e=>{missing.add(e.message)})}}continue}let indices=s.indices.slice();if(s.vertex_normals)indices.pop();let points=indices.map(i=>vertices[i]);if(!points.length)continue;let supportIndex=catalog.surface_supports?.[model.name]?.[n.name]?.[i],supportSurface=n.surfaces[supportIndex],supportPlane=supportSurface?.indices.map(j=>vertices[j]);let normal=s.normal?normalise(direction(m.basis,s.normal)):points.length>2?normalise(cross(sub(points[1],points[0]),sub(points[2],points[0]))):[0,1,0],back=dot(supportSurface?direction(m.basis,supportSurface.normal):normal,sub(eye,supportPlane?.[0]||points[0]))<0,colour=s.colour;if((s.kind===2||s.kind===4)&&back){colour=s.back_colour;normal=normal.map(v=>-v)}let rgb=s.kind===6?lightMaterial(colour,p,g):material(colour,normal,p,g);if(!rgb)continue;let vertexColours=null;if(s.vertex_normals&&$('smooth').checked&&(flags&4)){vertexColours=indices.map(i=>{let nv=n.vertices[i+1]||s.normal||[0,16384,0],nn=normalise(direction(m.basis,nv));if(back)nn=nn.map(v=>-v);return material(colour,nn,p,g)||rgb})}let overlay=catalog.surface_overlays?.[model.name]?.[n.name];result.push({points,rgb,vertexColours,pointCloud:s.kind===6,overlayHost,overlayMesh:attachmentOverlay?.mesh,overlayPlane:supportPlane||attachmentOverlay?.plane,overlayNormal:attachmentOverlay?.normal||(overlay?normalise(direction(m.basis,overlay.normal)):null),overlayReach:attachmentOverlay?.reach??overlay?.reach,decal:s.kind===3,line:s.kind===0||s.kind===1,closed:s.kind===1,pattern:s.kind===3&&s.pattern_colour!==s.colour?s.pattern%16:-1,edge:s.kind===3?s.edge_colour:65535})}}
+function gather(eye){const models=library.models;let result=[],missing=new Set(),g=globalParameters(),rng=random($('perturb').checked?phase:1),parts=0,hidden=0,distance=+$('distance').value;function visit(model,offset,m,p,depth,attachmentOverlay=null){if(depth>40){missing.add('cyclic graph');return}let n=model.lookup.get(offset);if(!n){missing.add(`node ${offset}`);return}parts++;let count=n.surfaces.length,flags=6;if(n.lod.length){let eligible=n.lod.filter(l=>l.threshold>distance),l=eligible.at(-1)||((depth===0)?n.lod[0]:null);if(!l)return;count=l.surfaces;flags=l.flags}let vertices=n.vertices.map(v=>point(m,v.map(x=>x*(2**n.coordinate_shift)))),attachmentRule=catalog.attachment_overlays?.[model.name]?.[n.name],overlayHost=attachmentRule?.mesh&&attachmentRule.models.includes(catalog.registry[p[attachmentRule.parameter]]);for(let i of depthSurfaceOrder(n,m,eye,count)){let s=n.surfaces[i];if(s.kind===4&&!(flags&1))continue;if(s.kind<=1&&!(flags&2))continue;if(s.kind===6&&!(g[0]&1))continue;if(s.kind>=16){if(!s.reference)continue;let t=transform(s,n.coordinate_shift,p,g,catalog.sine,m,rng);if(!t){hidden++;continue}if(s.kind===16)visit(model,s.node,t,t.parameters,depth+1,attachmentOverlay);else{let index=s.kind===18?t.parameters[s.reference&255]:s.reference,name=catalog.registry[index];if(!index)continue;if(!name){missing.add(`registry ${index}`);continue}if(models.has(name)){let rule=attachmentRule,support=attachmentOverlay;if(s.kind===18&&rule?.parameter===(s.reference&255)&&rule.models.includes(name)){if(rule.mesh){let normal=normalise(direction(t.basis,rule.normal)),mesh=n.surfaces.slice(0,count).filter(face=>(face.kind===2||(face.kind===4&&(flags&1)))&&face.colour!==65535&&dot(normalise(direction(m.basis,face.normal)),normal)>.5).flatMap(face=>{let indices=face.vertex_normals?face.indices.slice(0,-1):face.indices,points=indices.map(i=>vertices[i]);return triangles(points).map(ids=>ids.map(i=>points[i]))});support={mesh,normal,reach:rule.reach}}else support={plane:n.surfaces[rule.surface].indices.map(i=>vertices[i])}}visit(models.get(name),0,t,s.kind===18?models.get(name).nodes[0].parameters.concat(Array(256).fill(0)):t.parameters,depth+1,support);}else{missing.add(name);loadModel(name).catch(e=>{missing.add(e.message)})}}continue}let indices=s.indices.slice();if(s.vertex_normals)indices.pop();let points=indices.map(i=>vertices[i]);if(!points.length)continue;let supportIndex=catalog.surface_supports?.[model.name]?.[n.name]?.[i],supportSurface=n.surfaces[supportIndex],supportPlane=supportSurface?.indices.map(j=>vertices[j]);let normal=s.normal?normalise(direction(m.basis,s.normal)):points.length>2?normalise(cross(sub(points[1],points[0]),sub(points[2],points[0]))):[0,1,0],back=dot(supportSurface?direction(m.basis,supportSurface.normal):normal,sub(eye,supportPlane?.[0]||points[0]))<0,colour=s.colour;if((s.kind===2||s.kind===4)&&back){colour=s.back_colour;normal=normal.map(v=>-v)}let rgb=s.kind===6?lightMaterial(colour,p,g):material(colour,s.kind===3?null:normal,p,g);let pattern = -1, patternBackground = null, edgeRgb = null;
+      if (s.kind === 3) {
+        if (flags & 2) edgeRgb = material(s.edge_colour, null, p, g);
+        if (rgb && resolveColour(s.pattern_colour,p,g) !== resolveColour(colour,p,g)) {
+          pattern = s.pattern;
+          patternBackground = material(s.pattern_colour, null, p, g);
+        }
+        if (!rgb && edgeRgb) {
+          result.push({points, rgb: edgeRgb, line: true, closed: true, pattern: -1, edge: 65535});
+        }
+      }
+      if (!rgb) continue;
+      let vertexColours=null;if(s.vertex_normals&&$('smooth').checked&&(flags&4)){vertexColours=indices.map(i=>{let nv=n.vertices[i+1]||s.normal||[0,16384,0],nn=normalise(direction(m.basis,nv));if(back)nn=nn.map(v=>-v);return material(colour,nn,p,g)||rgb})}let overlay=catalog.surface_overlays?.[model.name]?.[n.name];result.push({points,rgb,vertexColours,pointCloud:s.kind===6,overlayHost,overlayMesh:attachmentOverlay?.mesh,overlayPlane:supportPlane||attachmentOverlay?.plane,overlayNormal:attachmentOverlay?.normal||(overlay?normalise(direction(m.basis,overlay.normal)):null),overlayReach:attachmentOverlay?.reach??overlay?.reach,decal:s.kind===3,line:s.kind===0||s.kind===1,closed:s.kind===1,pattern,patternBackground,edgeRgb,edge:edgeRgb?s.edge_colour:65535})}}
 visit(selected,0,identity(),parameters,0);stats={parts,hidden,primitives:result.length,missing:[...missing]};return result}
 function hasVisibleGeometry(item) {
   const p = item.points;
@@ -86,8 +153,43 @@ function parametersChanged() {
 // solid decals. A small forward bias separates each layer; slope-dependent
 // separation pushes earlier fills back at shallow angles. Real foreground
 // geometry still occludes the detail, and line work stays above the fills.
-function geometry(items){let tris=[],decals=[],lines=[],points=[],lights=[];let layer=0,back=0,put=(target,p,c,pat=-1)=>target.push(...p,...c,pat,layer*4e-5,back);for(let item of depthLayers(items)){layer=item.layer;back=item.backLayers||0;let{points:p,rgb:c,pattern:pat,vertexColours:vc}=item;if(item.pointCloud){for(const q of p)put(lights,q,c);continue}if(item.line||p.length<3){if(p.length===1)put(points,p[0],c);for(let i=1;i<p.length;i++){put(lines,p[i-1],c);put(lines,p[i],c)}if(item.closed&&p.length>2){put(lines,p.at(-1),c);put(lines,p[0],c)}continue}for(let ids of triangles(p))for(let i of ids)put(item.decal?decals:tris,p[i],vc?vc[i]:c,pat);if($('edges').checked||item.edge!==65535){back=0;layer=item.layer+1;let e=$('edges').checked?c.map(v=>v*.45):material(item.edge,[0,1,0],parameters,globalParameters());if(e)for(let i=0;i<p.length;i++){put(lines,p[i],e);put(lines,p[(i+1)%p.length],e)}}}return{tris,decals,lines,points,lights}}
+function geometry(items) {
+  const tris = [], decals = [], lines = [], points = [], lights = [];
+  let layer = 0, back = 0;
+  const put = (target, point, rgb, pattern = -1) => target.push(...point, ...rgb, pattern, layer * 4e-5, back);
+  for (const item of depthLayers(items)) {
+    layer = item.layer;
+    back = item.backLayers || 0;
+    const {points: p, rgb, vertexColours} = item;
+    if (item.pointCloud) {
+      for (const point of p) put(lights, point, rgb);
+      continue;
+    }
+    if (item.line || p.length < 3) {
+      if (p.length === 1) put(points, p[0], rgb);
+      for (let i = 1; i < p.length; i++) { put(lines, p[i-1], rgb); put(lines, p[i], rgb); }
+      if (item.closed && p.length > 2) { put(lines, p.at(-1), rgb); put(lines, p[0], rgb); }
+      continue;
+    }
+    const target = item.decal ? decals : tris;
+    const faces = item.pattern >= 0 ? patternedTriangles(p) : triangles(p);
+    for (const face of faces) {
+      for (const i of face) put(target, p[i], vertexColours?.[i] || rgb, item.pattern);
+      // Two-colour fills cover the complementary pixels at the same depth.
+      // Transparent fills leave those pixels and their depth untouched.
+      if (item.patternBackground) for (const i of face) put(target, p[i], item.patternBackground, item.pattern + 16);
+    }
+    const edge = $('edges').checked ? rgb.map(v => v * .45) : item.edgeRgb;
+    if (edge) {
+      back = 0; layer = item.layer + 1;
+      for (let i = 0; i < p.length; i++) { put(lines, p[i], edge); put(lines, p[(i+1) % p.length], edge); }
+    }
+  }
+  return {tris, decals, lines, points, lights};
+}
 function render(){let dpr=devicePixelRatio||1,w=Math.round(canvas.clientWidth*dpr),h=Math.round(canvas.clientHeight*dpr);if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h}gl.viewport(0,0,w,h);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);if(!selected)return;let forward=normalise([Math.cos(pitch)*Math.cos(yaw),Math.sin(pitch),Math.cos(pitch)*Math.sin(yaw)]),right=normalise(cross([0,1,0],forward)),up=cross(forward,right),aspect=w/h,r=bounds.radius*1.15/(zoom*Math.min(1,aspect)),sx=1/(r*aspect),sy=1/r,sz=-1/(bounds.radius*8),c=bounds.center,eye=c.map((v,i)=>v+forward[i]*bounds.radius*8);gl.uniformMatrix4fv(gl.getUniformLocation(program,'view'),false,new Float32Array([right[0]*sx,up[0]*sy,forward[0]*sz,0,right[1]*sx,up[1]*sy,forward[1]*sz,0,right[2]*sx,up[2]*sy,forward[2]*sz,0,-dot(right,c)*sx,-dot(up,c)*sy,-dot(forward,c)*sz,1]));const items=gather(eye),data=geometry(items);
+  gl.uniform1f(frameHeight, h);
+  gl.uniform1f(patternPixel, Math.max(1, Math.round(dpr), Math.round(Math.min(w/640, h/480))));
   gl.disable(gl.POLYGON_OFFSET_FILL);
   gl.uniform1f(pointSize, Math.max(2, 2*dpr));
   gl.uniform1i(roundLight, 0);
@@ -108,9 +210,57 @@ function render(){let dpr=devicePixelRatio||1,w=Math.round(canvas.clientWidth*dp
   if (stats.missing.length) messages.push('Unavailable: '+stats.missing.join(', '));
   $('status').textContent=messages.join(' · ');canvas.dataset.ready='true'}
 function controls(){renderParameters($('params'),parameterDefinitions(selected,catalog),parameters,parametersChanged)}
-async function select(name){let token=++request;try{let m=await loadModel(name);if(token!==request)return;selected=m;motion.select(name,entries.get(name)?.motion_clocks);parameters=modelParameters(true);bounds={center:[0,0,0],radius:100};$('effect-framing').hidden=!parameterDefinitions(selected,catalog).preview?.fit_on_change;$('title').textContent=`${catalog.models.find(e=>e.name===name)?.display_name||m.nodes[0].name} · ${name}`;if($('details'))$('details').textContent=`${m.size.toLocaleString()} bytes · ${m.nodes.length} distinct shape nodes\n${m.nodes.map(n=>n.name).join(' · ')}\n\n${m.warnings.join('\n')||'All decoded references are within their tables.'}`;history.replaceState(null,'','#'+name);browser.select(name);if($('model-description'))$('model-description').textContent=entries.get(name)?.hint||'';let entry=catalog.models.find(e=>e.name===name),group=catalog.categories.find(g=>g.id===entry?.category);if(entry&&$('details'))$('details').textContent+=`\n\nGroup: ${group?.label}\n${entry.display_name}\nClassification: ${entry.classification_source}`;controls();fit();dirty=true}catch(e){$('status').className='status error';$('status').textContent=e.message;throw e}}
-const browser=createModelBrowser(catalog,select,root);
-$('reset').onclick=()=>{yaw=.85;pitch=.35;fit()};$('defaults').onclick=()=>{parameters=modelParameters(canvas.hasAttribute('data-preview-defaults'));motion.select(selected.name,entries.get(selected.name)?.motion_clocks);controls();parametersChanged()};$('fit-effect').onchange=()=>{if($('fit-effect').checked)parametersChanged()};for(let id of['edges','smooth','distance','night','perturb'])$(id).oninput=()=>dirty=true;
+function clocks(name) {
+  return library === editions.dos ? dos.models[name] : entries.get(name)?.motion_clocks;
+}
+async function select(name) {
+  const token = ++request;
+  const available = Object.hasOwn(dos.models, name);
+  const edition = available ? preferredEdition : 'sce';
+  const source = editions[edition];
+  try {
+    const model = await loadModel(name, source);
+    if (token !== request) return;
+    const entry = entries.get(name), group = sce.categories.find(g => g.id === entry.category);
+    const comparing = selected?.name === name && library !== source;
+    const previousZoom = zoom;
+    library = source; catalog = source.catalog; selected = model;
+    motion.select(name, clocks(name));
+    parameters = modelParameters(true);
+    $('edition-choice').hidden = !available;
+    $('edition').value = edition;
+    $('effect-framing').hidden = !parameterDefinitions(model,catalog).preview?.fit_on_change;
+    $('title').textContent = (entry.display_name || model.nodes[0].name) + ' · ' + name;
+    if ($('details')) $('details').textContent = [
+      model.size.toLocaleString() + ' bytes · ' + model.nodes.length + ' distinct shape nodes',
+      model.nodes.map(n => n.name).join(' · '), '',
+      model.warnings.join('\n') || 'All decoded references are within their tables.', '',
+      'Group: ' + group.label, entry.display_name, 'Classification: ' + entry.classification_source
+    ].join('\n');
+    const url = new URL(location.href);
+    if (preferredEdition === 'dos') url.searchParams.set('edition','dos');
+    else url.searchParams.delete('edition');
+    url.hash = name;
+    history.replaceState(null, '', url);
+    browser.select(name);
+    if ($('model-description')) $('model-description').textContent = edition === 'sce' ? entry.hint || '' : '';
+    controls();
+    fit();
+    if (comparing) zoom = previousZoom;
+    dirty = true;
+  } catch (error) {
+    if (token !== request) return;
+    $('status').className = 'status error';
+    $('status').textContent = error.message;
+    throw error;
+  }
+}
+const browser = createModelBrowser(sce, select, root, model =>
+  preferredEdition === 'dos' && Object.hasOwn(dos.models, model.name)
+    ? dos.parameter_controls[model.name].controls.length + dos.models[model.name].length
+    : model.parameter_count + (model.motion_clocks?.length || 0));
+$('edition').onchange = () => { preferredEdition = $('edition').value; select(selected.name); };
+$('reset').onclick=()=>{yaw=.85;pitch=.35;fit()};$('defaults').onclick=()=>{parameters=modelParameters(canvas.hasAttribute('data-preview-defaults'));motion.select(selected.name,clocks(selected.name));controls();parametersChanged()};$('fit-effect').onchange=()=>{if($('fit-effect').checked)parametersChanged()};for(let id of['edges','smooth','distance','night','perturb'])$(id).oninput=()=>dirty=true;
 canvas.onpointerdown=e=>{rotateDrag={x:e.clientX,y:e.clientY};canvas.setPointerCapture(e.pointerId)};canvas.onpointerup=e=>{rotateDrag=null;canvas.releasePointerCapture(e.pointerId)};canvas.onpointercancel=()=>rotateDrag=null;canvas.onpointermove=e=>{if(!rotateDrag)return;yaw+=(e.clientX-rotateDrag.x)*.008;pitch=Math.max(-1.5,Math.min(1.5,pitch+(e.clientY-rotateDrag.y)*.008));rotateDrag={x:e.clientX,y:e.clientY};dirty=true};canvas.onwheel=e=>{e.preventDefault();zoom=Math.max(.15,Math.min(20,zoom*Math.exp(-e.deltaY*.001)));dirty=true};new ResizeObserver(()=>dirty=true).observe(canvas);
 function tick(time){if(motion.advance(time))dirty=true;if(document.hidden){lastTime=time;requestAnimationFrame(tick);return}let dt=Math.min(.05,(time-lastTime)/1000);lastTime=time;const lightTick=Math.floor(time*16/1000);if($('night').checked&&((lightTick^lightingTick)&16))dirty=true;lightingTick=lightTick;if($('spin').checked){yaw+=dt*.25;dirty=true}if($('perturb').checked&&Math.floor(time/100)!==phase){phase=Math.floor(time/100);dirty=true}if(dirty){render();dirty=false}requestAnimationFrame(tick)}await select(entries.has(location.hash.slice(1))?location.hash.slice(1):'su27');requestAnimationFrame(tick);
 // Local automated checks and captures; controls use the same validation as the UI.

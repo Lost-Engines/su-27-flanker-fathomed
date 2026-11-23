@@ -80,7 +80,13 @@ try{
  await page.locator('#parameter-4').fill('16384');await page.locator('#parameter-4').dispatchEvent('input');await settled();const after=await page.locator('#view').screenshot();assert(!before.equals(after),'Landing gear did not change the rendered image');
  const camera=await page.evaluate(()=>window.flankerModelViewer.camera);await page.locator('#view').focus();await page.keyboard.press('ArrowRight');assert((await page.evaluate(()=>window.flankerModelViewer.camera.yaw))>camera.yaw);await page.getByRole('button',{name:'Zoom in',exact:true}).click();assert((await page.evaluate(()=>window.flankerModelViewer.camera.zoom))>camera.zoom);
  const box=await page.locator('#view').boundingBox();const yaw=await page.evaluate(()=>window.flankerModelViewer.camera.yaw);await page.mouse.move(box.x+200,box.y+200);await page.mouse.down();await page.mouse.move(box.x+260,box.y+215,{steps:5});await page.mouse.up();assert.notEqual(await page.evaluate(()=>window.flankerModelViewer.camera.yaw),yaw);
- await ready('models/#epilot');assert.equal(await page.locator('#model-select').inputValue(),'epilot');await ready('models/#not-a-model');assert.equal(await page.locator('#model-select').inputValue(),'su27');
+ await ready('models/?edition=dos#katersm4');await settled();
+ assert.equal(await page.locator('#edition').inputValue(),'dos');
+ assert.equal(await page.locator('#parameter-12').inputValue(),'326');
+ await page.locator('#edition').selectOption('sce');
+ await page.waitForFunction(()=>!location.search && flankerModelViewer.controlDefinitions.controls.length===4);
+ assert.equal(await page.locator('#parameter-12').inputValue(),'0');
+ await ready('models/#epilot');await page.waitForFunction(()=>flankerModelViewer.selected==='epilot');assert.equal(await page.locator('#model-select').inputValue(),'epilot');await ready('models/#not-a-model');await page.waitForFunction(()=>flankerModelViewer.selected==='su27');assert.equal(await page.locator('#model-select').inputValue(),'su27');
  await ready('missions/');await page.waitForFunction(()=>window.flankerMissionMap);const missions=await page.locator('#mission option').evaluateAll(o=>o.map(x=>x.value));assert.equal(missions.length,8);
  for(const id of missions){await page.locator('#mission').selectOption(id);assert(await page.locator('#briefing').textContent());assert.equal(await page.evaluate(()=>window.flankerMissionMap.mission),id);const options=await page.locator('#actor option').count();if(options>1){await page.locator('#actor').selectOption('1');assert.equal(await page.evaluate(()=>window.flankerMissionMap.selected),1);}}
  await page.getByRole('button',{name:'Fit mission'}).click();const mapBefore=await page.locator('#map').screenshot();await page.getByRole('button',{name:'Zoom in',exact:true}).click();await page.waitForTimeout(70);assert(!mapBefore.equals(await page.locator('#map').screenshot()));

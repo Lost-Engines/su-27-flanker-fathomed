@@ -59,6 +59,16 @@ for entry in catalog['models']:
     if thumbnail := entry.get('thumbnail'):
         filename = thumbnail.split('?')[0]
         copy(base + filename, 'public/data/models/' + filename)
+# The public DOS exhibit needs geometry and animation, while the research
+# download also carries parser offsets and byte-coverage information.
+for name in catalog['dos_patterns']['files']:
+    shape = load('extracted/shapes/dos_1_1/' + name + '.json')
+    for node in shape['nodes']:
+        for s in node['surfaces']:
+            for field in ('offset', 'type', 'reserved07'):
+                s.pop(field, None)
+    dump('public/data/models/dos/' + name + '.json', shape)
+
 # Exhibition starting poses for the two stages of ejection.
 catalog['parameter_controls']['epilot']['preview'] = {'parameters': {'1': 4096, '2': 0, '3': 38}}
 catalog['parameter_controls']['chear']['preview'] = {'parameters': {'0': 1, '1': 4096, '2': 0, '3': 26}}
@@ -119,5 +129,5 @@ for path in notes:
     data = (SOURCE / 'analysis' / path).read_bytes()
     research_sources.append({'source': 'analysis/' + path, 'sha256': sha256(data).hexdigest()})
 
-dump('content/data-provenance.json', {'edition':'Clean Windows Squadron Commander’s Edition 1.5', 'source_repository':'su-27-flanker-reverse (local research tree)', 'models': models, 'imports': records, 'research_sources': research_sources})
+dump('content/data-provenance.json', {'edition':'Windows Squadron Commander’s Edition 1.5 and DOS 1.1 patterned model variants', 'source_repository':'su-27-flanker-reverse (local research tree)', 'models': models, 'imports': records, 'research_sources': research_sources})
 print(f'Imported {len(models)} models, {len(missions)} missions; {len(records)} explicit source reads.')

@@ -25,7 +25,7 @@ The existing [C++ validation notes](https://github.com/Lost-Engines/su-27-flanke
 
 ## What the viewers show
 
-**Models.** All 364 shapes from Squadron Commander’s Edition 1.5 are available in the viewer. The rocking radar dish and three sets of counter-rotating propellers use their earlier DOS animation commands. Night-light dots are enlarged so you can see them on the aircraft. The original positions, colours and beacon timing are preserved.
+**Models.** All 364 shapes from Squadron Commander’s Edition 1.5 are available in the viewer. An edition selector opens the DOS 1.1 meshes for 33 models with different patterned faces, including the Tarantul-2’s railings and mast. The rocking radar dish and three sets of counter-rotating propellers use their earlier DOS animation commands. Night-light dots are enlarged so you can see them on the aircraft. The original positions, colours and beacon timing are preserved.
 
 **Mission map.** Eight supplied scenarios shown over the normal MAP terrain. The map shows initial aircraft routes and unit positions. Briefings retain their original spelling and control instructions.
 
