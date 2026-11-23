@@ -14,7 +14,49 @@ function rotate(b,axis,a,t){let s=sine(a,t),c=sine(a+4096,t),[i,j]=[[1,2],[2,0],
 function translate(m,v){for(let i=0;i<3;i++)m.translation[i]=(m.translation[i]+Math.floor(dot(m.basis.map(c=>c[i]),v)/16384))|0}
 function curve(c,p,g){let v=(c.global_parameter?g:p)[c.parameter]||0,q=c.pairs;if(q.length===1)return muldiv(v,q[0][1],q[0][0]);if(!q.length||v<q[0][0]||v>q.at(-1)[0])return null;for(let [x,y]of q)if(x===v)return y;for(let i=1;i<q.length;i++){let[x0,y0]=q[i-1],[x1,y1]=q[i];if(v>x0&&v<x1)return y0+muldiv(v-x0,y1-y0,x1-x0)}return null}
 export function transform(s,shift,p,g,t,parent=identity(),rng=()=>0){let m={basis:parent.basis.map(v=>v.slice()),translation:parent.translation.slice(),flags:parent.flags,parameters:p};let c=s.condition;if(c){let v=(c&32768?g:p)[(c&112)>>4]||0;if(!(c&128))v=~v;if(v&(1<<(((c&15)-1)&31)))return null}translate(m,s.translation.map(v=>v<<shift));let value=0;for(let c of s.commands){let mode=c.mode,a=c.argument,op=c.opcode;if(!mode)value=a;else if(mode===256)value=(c.global_parameter?g:p)[c.parameter]||0;else if(mode===512){value=curve(c.curve,p,g);if(value===null)return null}else if(mode===768)value=rng(a);else if(mode===1024)p=p.slice(a&63);if(c.negate)value=-value;if([10,18,26].includes(op))rotate(m.basis,(op-10)/8,value,t);else if([11,19,27].includes(op))rotate(m.basis,(op-11)/8,4096,t);else if([12,20,28].includes(op))rotate(m.basis,(op-12)/8,-4096,t);else if([9,17,25].includes(op)){let d=[0,0,0];d[(op-9)/8]=value<<shift;translate(m,d)}else if([5,13,21,29].includes(op)){for(let i of op===5?[0,1,2]:[(op-13)/8])m.basis[i]=m.basis[i].map(v=>i16(Math.imul(v,value)>>14))}else if(![0,6].includes(op))return null;let mirror=c.mirror;if(op===6&&!(m.flags&16))mirror=0;for(let i=0;i<3;i++)if(mirror&(1<<i)){m.flags^=16;m.basis[i]=m.basis[i].map(v=>i16(-v))}}m.parameters=p;return m}
-export function random(seed=1){return limit=>{seed=(Math.imul(seed,0x15a4e35)+1)>>>0;return Math.imul((seed>>>16)&32767,limit)>>15}}
+export function random(seed = 1) {
+  function sample(limit) {
+    sample.state = (Math.imul(sample.state, 0x015a4e35) + 1) >>> 0;
+    return Math.imul((sample.state >>> 16) & 32767, limit) >> 15;
+  }
+  sample.state = seed;
+  return sample;
+}
+
+// The country artwork is shared with aircraft decals. On a ship with a cloth
+// face, fit its painted outline to the four corners of that particular flag.
+const flagLayouts = new WeakMap();
+export function flagOnCloth(node, corners) {
+  let layout = flagLayouts.get(node);
+  if (!layout) {
+    const edges = node.surfaces.flatMap(face => face.indices.map((id, i, ids) =>
+      [node.vertices[id], node.vertices[ids[(i + 1) % ids.length]]]));
+    const rows = new Map(node.vertices.map(([, y]) => [y, null]));
+    const top = Math.max(...rows.keys()), bottom = Math.min(...rows.keys());
+    for (const y of rows.keys()) {
+      // Include edges crossing this row. The Turkish emblem has many rows
+      // of interior vertices between the corners of its red field.
+      const xs = [];
+      for (const [[ax, ay], [bx, by]] of edges) {
+        if (y < Math.min(ay, by) || y > Math.max(ay, by)) continue;
+        if (ay === by) xs.push(ax, bx);
+        else xs.push(ax + (y - ay) * (bx - ax) / (by - ay));
+      }
+      rows.set(y, [Math.min(...xs), Math.max(...xs)]);
+    }
+    layout = node.vertices.map(([x, y]) => {
+      const [left, right] = rows.get(y);
+      return [(right - x) / (right - left), (top - y) / (top - bottom)];
+    });
+    flagLayouts.set(node, layout);
+  }
+  const [topHoist, topFly, bottomFly, bottomHoist] = corners;
+  return layout.map(([u, v]) => topHoist.map((_, i) => {
+    const top = topHoist[i] + u * (topFly[i] - topHoist[i]);
+    const bottom = bottomHoist[i] + u * (bottomFly[i] - bottomHoist[i]);
+    return top + v * (bottom - top);
+  }));
+}
 // The stored view-dependent lists also omit surfaces that should not be drawn
 // from that side (including coplanar detail). Select in the transformed frame.
 export function surfaceOrder(node, pose, eye, count) {

@@ -119,9 +119,8 @@ export function depthLayers(items) {
   let maximum = 0;
   for (const original of items) {
     for (let item of original.overlayNormal ? conformOverlay(original, supports) : [original]) {
-      // Explicit support faces cover flag markings and car1 windscreens. Their
-      // authored vertices sit off the supporting plane; project them onto it
-      // before layering, preserving their in-plane size and offset.
+      // Give fitted ship flags and car windscreens the same depth plane as
+      // their support before assigning the draw layers.
       const attachmentPlane = item.overlayPlane && plane(item.overlayPlane);
       if (attachmentPlane) {
         const {n, d} = attachmentPlane;

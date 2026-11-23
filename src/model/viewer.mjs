@@ -3,7 +3,7 @@ import {depthLayers} from './depth.mjs';
 import {parameterDefinitions, parameterValue} from './parameter-definitions.mjs';
 import {renderParameters} from './parameters.mjs';
 import {createMotionControls, restoreMotionCommands} from './motion.mjs';
-import{identity,point,direction,dot,sub,cross,normalise,transform,random,triangles,patternedTriangles,surfaceOrder}from'./shape.mjs';
+import{identity,point,direction,dot,sub,cross,normalise,transform,random,flagOnCloth,triangles,patternedTriangles,surfaceOrder}from'./shape.mjs';
 const $=id=>document.getElementById(id),canvas=$('view'),gl=canvas.getContext('webgl2',{antialias:true,preserveDrawingBuffer:true});
 if(!gl)throw new Error('This viewer needs WebGL 2.');
 const root = canvas.dataset.modelRoot || '../../extracted/shapes/win_1_5/';
@@ -55,7 +55,7 @@ const pointSize = gl.getUniformLocation(program, 'pointSize'), roundLight = gl.g
 const frameHeight = gl.getUniformLocation(program, 'frameHeight'), patternPixel = gl.getUniformLocation(program, 'patternPixel');
 const buffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buffer);for(let[name,size,offset]of[['position',3,0],['colour',3,12],['pattern',1,24],['depthBias',1,28],['depthBack',1,32]]){let a=gl.getAttribLocation(program,name);gl.enableVertexAttribArray(a);gl.vertexAttribPointer(a,size,gl.FLOAT,false,36,offset)}
 gl.uniform1iv(gl.getUniformLocation(program,'masks'),new Int32Array(catalog.patterns.flat()));gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.clearColor(.055,.085,.12,1);
-let selected,parameters=[],bounds={center:[0,0,0],radius:1000},yaw=.85,pitch=.35,zoom=1,request=0,lastTime=0,dirty=true,rotateDrag=null,stats={},phase=1,lightingTick=0;
+let selected,parameters=[],bounds={center:[0,0,0],radius:1000},yaw=.85,pitch=.35,zoom=1,request=0,lastTime=0,dirty=true,rotateDrag=null,stats={},phase=1,nextPhase=1,lightingTick=0;
 const motion = createMotionControls($('motion'), () => { dirty = true; });
 const entries = new Map(catalog.models.map(entry => [entry.name, entry]));
 // Evening preview (21:30): marker lights and both window/headlight groups are on.
@@ -103,7 +103,13 @@ function depthSurfaceOrder(node, pose, eye, count) {
   for(let i=order.length-1;i>=0;i--)if(!seen.has(order[i])){seen.add(order[i]);unique.push(order[i])}
   return unique.reverse();
 }
-function gather(eye){const models=library.models;let result=[],missing=new Set(),g=globalParameters(),rng=random($('perturb').checked?phase:1),parts=0,hidden=0,distance=+$('distance').value;function visit(model,offset,m,p,depth,attachmentOverlay=null){if(depth>40){missing.add('cyclic graph');return}let n=model.lookup.get(offset);if(!n){missing.add(`node ${offset}`);return}parts++;let count=n.surfaces.length,flags=6;if(n.lod.length){let eligible=n.lod.filter(l=>l.threshold>distance),l=eligible.at(-1)||((depth===0)?n.lod[0]:null);if(!l)return;count=l.surfaces;flags=l.flags}let vertices=n.vertices.map(v=>point(m,v.map(x=>x*(2**n.coordinate_shift)))),attachmentRule=catalog.attachment_overlays?.[model.name]?.[n.name],overlayHost=attachmentRule?.mesh&&attachmentRule.models.includes(catalog.registry[p[attachmentRule.parameter]]);for(let i of depthSurfaceOrder(n,m,eye,count)){let s=n.surfaces[i];if(s.kind===4&&!(flags&1))continue;if(s.kind<=1&&!(flags&2))continue;if(s.kind===6&&!(g[0]&1))continue;if(s.kind>=16){if(!s.reference)continue;let t=transform(s,n.coordinate_shift,p,g,catalog.sine,m,rng);if(!t){hidden++;continue}if(s.kind===16)visit(model,s.node,t,t.parameters,depth+1,attachmentOverlay);else{let index=s.kind===18?t.parameters[s.reference&255]:s.reference,name=catalog.registry[index];if(!index)continue;if(!name){missing.add(`registry ${index}`);continue}if(models.has(name)){let rule=attachmentRule,support=attachmentOverlay;if(s.kind===18&&rule?.parameter===(s.reference&255)&&rule.models.includes(name)){if(rule.mesh){let normal=normalise(direction(t.basis,rule.normal)),mesh=n.surfaces.slice(0,count).filter(face=>(face.kind===2||(face.kind===4&&(flags&1)))&&face.colour!==65535&&dot(normalise(direction(m.basis,face.normal)),normal)>.5).flatMap(face=>{let indices=face.vertex_normals?face.indices.slice(0,-1):face.indices,points=indices.map(i=>vertices[i]);return triangles(points).map(ids=>ids.map(i=>points[i]))});support={mesh,normal,reach:rule.reach}}else support={plane:n.surfaces[rule.surface].indices.map(i=>vertices[i])}}visit(models.get(name),0,t,s.kind===18?models.get(name).nodes[0].parameters.concat(Array(256).fill(0)):t.parameters,depth+1,support);}else{missing.add(name);loadModel(name).catch(e=>{missing.add(e.message)})}}continue}let indices=s.indices.slice();if(s.vertex_normals)indices.pop();let points=indices.map(i=>vertices[i]);if(!points.length)continue;let supportIndex=catalog.surface_supports?.[model.name]?.[n.name]?.[i],supportSurface=n.surfaces[supportIndex],supportPlane=supportSurface?.indices.map(j=>vertices[j]);let normal=s.normal?normalise(direction(m.basis,s.normal)):points.length>2?normalise(cross(sub(points[1],points[0]),sub(points[2],points[0]))):[0,1,0],back=dot(supportSurface?direction(m.basis,supportSurface.normal):normal,sub(eye,supportPlane?.[0]||points[0]))<0,colour=s.colour;if((s.kind===2||s.kind===4)&&back){colour=s.back_colour;normal=normal.map(v=>-v)}let rgb=s.kind===6?lightMaterial(colour,p,g):material(colour,s.kind===3?null:normal,p,g);let pattern = -1, patternBackground = null, edgeRgb = null;
+function gather(eye, rng = random(phase)) {
+  const models = library.models;
+  let result=[],missing=new Set(),g=globalParameters(),parts=0,hidden=0,distance=+$('distance').value;
+  function visit(model,offset,m,p,depth,attachmentOverlay=null){if(depth>40){missing.add('cyclic graph');return}let n=model.lookup.get(offset);if(!n){missing.add(`node ${offset}`);return}parts++;let count=n.surfaces.length,flags=6;if(n.lod.length){let eligible=n.lod.filter(l=>l.threshold>distance),l=eligible.at(-1)||((depth===0)?n.lod[0]:null);if(!l)return;count=l.surfaces;flags=l.flags}
+    const vertices = attachmentOverlay?.cloth ? flagOnCloth(n, attachmentOverlay.cloth)
+      : n.vertices.map(v => point(m, v.map(x => x * (2 ** n.coordinate_shift))));
+    const attachmentRule=catalog.attachment_overlays?.[model.name]?.[n.name],overlayHost=attachmentRule?.mesh&&attachmentRule.models.includes(catalog.registry[p[attachmentRule.parameter]]);for(let i of depthSurfaceOrder(n,m,eye,count)){let s=n.surfaces[i];if(s.kind===4&&!(flags&1))continue;if(s.kind<=1&&!(flags&2))continue;if(s.kind===6&&!(g[0]&1))continue;if(s.kind>=16){if(!s.reference)continue;let t=transform(s,n.coordinate_shift,p,g,catalog.sine,m,rng);if(!t){hidden++;continue}if(s.kind===16)visit(model,s.node,t,t.parameters,depth+1,attachmentOverlay);else{let index=s.kind===18?t.parameters[s.reference&255]:s.reference,name=catalog.registry[index];if(!index)continue;if(!name){missing.add(`registry ${index}`);continue}if(models.has(name)){let rule=attachmentRule,support=attachmentOverlay;if(s.kind===18&&rule?.parameter===(s.reference&255)&&rule.models.includes(name)){if(rule.mesh){let normal=normalise(direction(t.basis,rule.normal)),mesh=n.surfaces.slice(0,count).filter(face=>(face.kind===2||(face.kind===4&&(flags&1)))&&face.colour!==65535&&dot(normalise(direction(m.basis,face.normal)),normal)>.5).flatMap(face=>{let indices=face.vertex_normals?face.indices.slice(0,-1):face.indices,points=indices.map(i=>vertices[i]);return triangles(points).map(ids=>ids.map(i=>points[i]))});support={mesh,normal,reach:rule.reach}}else support={cloth:n.surfaces[rule.surface].indices.map(i=>vertices[i])}}visit(models.get(name),0,t,s.kind===18?models.get(name).nodes[0].parameters.concat(Array(256).fill(0)):t.parameters,depth+1,support);}else{missing.add(name);loadModel(name).catch(e=>{missing.add(e.message)})}}continue}let indices=s.indices.slice();if(s.vertex_normals)indices.pop();let points=indices.map(i=>vertices[i]);if(!points.length)continue;let supportIndex=catalog.surface_supports?.[model.name]?.[n.name]?.[i],supportSurface=n.surfaces[supportIndex],supportPlane=supportSurface?.indices.map(j=>vertices[j]);let normal=s.normal?normalise(direction(m.basis,s.normal)):points.length>2?normalise(cross(sub(points[1],points[0]),sub(points[2],points[0]))):[0,1,0],back=dot(supportSurface?direction(m.basis,supportSurface.normal):normal,sub(eye,supportPlane?.[0]||points[0]))<0,colour=s.colour;if((s.kind===2||s.kind===4)&&back){colour=s.back_colour;normal=normal.map(v=>-v)}let rgb=s.kind===6?lightMaterial(colour,p,g):material(colour,s.kind===3?null:normal,p,g);let pattern = -1, patternBackground = null, edgeRgb = null;
       if (s.kind === 3) {
         if (flags & 2) edgeRgb = material(s.edge_colour, null, p, g);
         if (rgb && resolveColour(s.pattern_colour,p,g) !== resolveColour(colour,p,g)) {
@@ -115,7 +121,7 @@ function gather(eye){const models=library.models;let result=[],missing=new Set()
         }
       }
       if (!rgb) continue;
-      let vertexColours=null;if(s.vertex_normals&&$('smooth').checked&&(flags&4)){vertexColours=indices.map(i=>{let nv=n.vertices[i+1]||s.normal||[0,16384,0],nn=normalise(direction(m.basis,nv));if(back)nn=nn.map(v=>-v);return material(colour,nn,p,g)||rgb})}let overlay=catalog.surface_overlays?.[model.name]?.[n.name];result.push({points,rgb,vertexColours,pointCloud:s.kind===6,overlayHost,overlayMesh:attachmentOverlay?.mesh,overlayPlane:supportPlane||attachmentOverlay?.plane,overlayNormal:attachmentOverlay?.normal||(overlay?normalise(direction(m.basis,overlay.normal)):null),overlayReach:attachmentOverlay?.reach??overlay?.reach,decal:s.kind===3,line:s.kind===0||s.kind===1,closed:s.kind===1,pattern,patternBackground,edgeRgb,edge:edgeRgb?s.edge_colour:65535})}}
+      let vertexColours=null;if(s.vertex_normals&&$('smooth').checked&&(flags&4)){vertexColours=indices.map(i=>{let nv=n.vertices[i+1]||s.normal||[0,16384,0],nn=normalise(direction(m.basis,nv));if(back)nn=nn.map(v=>-v);return material(colour,nn,p,g)||rgb})}let overlay=catalog.surface_overlays?.[model.name]?.[n.name];result.push({points,rgb,vertexColours,pointCloud:s.kind===6,overlayHost,overlayMesh:attachmentOverlay?.mesh,overlayPlane:supportPlane||attachmentOverlay?.cloth,overlayNormal:attachmentOverlay?.normal||(overlay?normalise(direction(m.basis,overlay.normal)):null),overlayReach:attachmentOverlay?.reach??overlay?.reach,decal:s.kind===3,line:s.kind===0||s.kind===1,closed:s.kind===1,pattern,patternBackground,edgeRgb,edge:edgeRgb?s.edge_colour:65535})}}
 visit(selected,0,identity(),parameters,0);stats={parts,hidden,primitives:result.length,missing:[...missing]};return result}
 function hasVisibleGeometry(item) {
   const p = item.points;
@@ -193,7 +199,9 @@ function geometry(items) {
   }
   return {tris, decals, lines, points, lights};
 }
-function render(){let dpr=devicePixelRatio||1,w=Math.round(canvas.clientWidth*dpr),h=Math.round(canvas.clientHeight*dpr);if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h}gl.viewport(0,0,w,h);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);if(!selected)return;let forward=normalise([Math.cos(pitch)*Math.cos(yaw),Math.sin(pitch),Math.cos(pitch)*Math.sin(yaw)]),right=normalise(cross([0,1,0],forward)),up=cross(forward,right),aspect=w/h,r=bounds.radius*1.15/(zoom*Math.min(1,aspect)),sx=1/(r*aspect),sy=1/r,sz=-1/(bounds.radius*8),c=bounds.center,eye=c.map((v,i)=>v+forward[i]*bounds.radius*8);gl.uniformMatrix4fv(gl.getUniformLocation(program,'view'),false,new Float32Array([right[0]*sx,up[0]*sy,forward[0]*sz,0,right[1]*sx,up[1]*sy,forward[1]*sz,0,right[2]*sx,up[2]*sy,forward[2]*sz,0,-dot(right,c)*sx,-dot(up,c)*sy,-dot(forward,c)*sz,1]));const items=gather(eye),data=geometry(items);
+function render(){let dpr=devicePixelRatio||1,w=Math.round(canvas.clientWidth*dpr),h=Math.round(canvas.clientHeight*dpr);if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h}gl.viewport(0,0,w,h);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);if(!selected)return;let forward=normalise([Math.cos(pitch)*Math.cos(yaw),Math.sin(pitch),Math.cos(pitch)*Math.sin(yaw)]),right=normalise(cross([0,1,0],forward)),up=cross(forward,right),aspect=w/h,r=bounds.radius*1.15/(zoom*Math.min(1,aspect)),sx=1/(r*aspect),sy=1/r,sz=-1/(bounds.radius*8),c=bounds.center,eye=c.map((v,i)=>v+forward[i]*bounds.radius*8);gl.uniformMatrix4fv(gl.getUniformLocation(program,'view'),false,new Float32Array([right[0]*sx,up[0]*sy,forward[0]*sz,0,right[1]*sx,up[1]*sy,forward[1]*sz,0,right[2]*sx,up[2]*sy,forward[2]*sz,0,-dot(right,c)*sx,-dot(up,c)*sy,-dot(forward,c)*sz,1]));const rng=random(phase);
+  const items=gather(eye,rng),data=geometry(items);
+  nextPhase=rng.state;
   gl.uniform1f(frameHeight, h);
   gl.uniform1f(patternPixel, Math.max(1, Math.round(dpr), Math.round(Math.min(w/640, h/480))));
   gl.disable(gl.POLYGON_OFFSET_FILL);
@@ -231,6 +239,7 @@ async function select(name) {
     const comparing = selected?.name === name && library !== source;
     const previousZoom = zoom;
     library = source; catalog = source.catalog; selected = model;
+    phase = nextPhase = 1;
     motion.select(name, clocks(name));
     parameters = modelParameters(true);
     $('edition-choice').hidden = !available;
@@ -268,7 +277,29 @@ const browser = createModelBrowser(sce, select, root, model =>
 $('edition').onchange = () => { preferredEdition = $('edition').value; select(selected.name); };
 $('reset').onclick=()=>{yaw=.85;pitch=.35;fit()};$('defaults').onclick=()=>{parameters=modelParameters(canvas.hasAttribute('data-preview-defaults'));motion.select(selected.name,clocks(selected.name));controls();parametersChanged()};$('fit-effect').onchange=()=>{if($('fit-effect').checked)parametersChanged()};for(let id of['edges','smooth','distance','night','perturb'])$(id).oninput=()=>dirty=true;
 canvas.onpointerdown=e=>{rotateDrag={x:e.clientX,y:e.clientY};canvas.setPointerCapture(e.pointerId)};canvas.onpointerup=e=>{rotateDrag=null;canvas.releasePointerCapture(e.pointerId)};canvas.onpointercancel=()=>rotateDrag=null;canvas.onpointermove=e=>{if(!rotateDrag)return;yaw+=(e.clientX-rotateDrag.x)*.008;pitch=Math.max(-1.5,Math.min(1.5,pitch+(e.clientY-rotateDrag.y)*.008));rotateDrag={x:e.clientX,y:e.clientY};dirty=true};canvas.onwheel=e=>{e.preventDefault();zoom=Math.max(.15,Math.min(20,zoom*Math.exp(-e.deltaY*.001)));dirty=true};new ResizeObserver(()=>dirty=true).observe(canvas);
-function tick(time){if(motion.advance(time))dirty=true;if(document.hidden){lastTime=time;requestAnimationFrame(tick);return}let dt=Math.min(.05,(time-lastTime)/1000);lastTime=time;const lightTick=Math.floor(time*16/1000);if($('night').checked&&((lightTick^lightingTick)&16))dirty=true;lightingTick=lightTick;if($('spin').checked){yaw+=dt*.25;dirty=true}if($('perturb').checked&&Math.floor(time/100)!==phase){phase=Math.floor(time/100);dirty=true}if(dirty){render();dirty=false}requestAnimationFrame(tick)}await select(entries.has(location.hash.slice(1))?location.hash.slice(1):'su27');requestAnimationFrame(tick);
+function tickFrame(time) {
+  if (motion.advance(time)) dirty = true;
+  if (document.hidden) {
+    lastTime = time;
+    requestAnimationFrame(tickFrame);
+    return;
+  }
+  const dt = Math.min(.05, (time - lastTime) / 1000);
+  lastTime = time;
+  const lightTick = Math.floor(time * 16 / 1000);
+  if ($('night').checked && ((lightTick ^ lightingTick) & 16)) dirty = true;
+  if ($('perturb').checked && lightTick !== lightingTick && phase !== nextPhase) {
+    // Continue after the random draws used by the last displayed pose.
+    phase = nextPhase;
+    dirty = true;
+  }
+  lightingTick=lightTick;
+  if ($('spin').checked) { yaw += dt * .25; dirty = true; }
+  if (dirty) { render(); dirty = false; }
+  requestAnimationFrame(tickFrame);
+}
+await select(entries.has(location.hash.slice(1)) ? location.hash.slice(1) : 'su27');
+requestAnimationFrame(tickFrame);
 // Local automated checks and captures; controls use the same validation as the UI.
 window.flankerModelViewer={select,get camera(){return {yaw,pitch,zoom}},setCamera(y,p,z=1){yaw=y;pitch=p;zoom=z;dirty=true},get stats(){return stats},get selected(){return selected?.name},get parameters(){
   if (!selected) return [];

@@ -4,7 +4,7 @@ import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 import {parse} from 'parse5';
 import {spawnSync} from 'node:child_process';
-import {cross,sub,triangles,patternedTriangles} from '../src/model/shape.mjs';
+import {cross,sub,triangles,patternedTriangles,flagOnCloth,random} from '../src/model/shape.mjs';
 import {parameterDefinitions} from '../src/model/parameter-definitions.mjs';
 const root=path.resolve(fileURLToPath(new URL('../',import.meta.url))),dist=path.join(root,'dist');
 async function walk(dir){const result=[];for(const entry of await readdir(dir,{withFileTypes:true})){const file=path.join(dir,entry.name),s=await lstat(file);assert(!s.isSymbolicLink(),`Symlink in artifact: ${file}`);if(entry.isDirectory())result.push(...await walk(file));else result.push(file);}return result;}
@@ -71,6 +71,31 @@ for (const name of ['katersm4', 'katersm2']) {
     }
   }
 }
+const ship = JSON.parse(await readFile(path.join(dist, 'data/models/dos/katersm4.json'), 'utf8'));
+const flag = ship.nodes.find(node => node.name === 'flag');
+const cloth = flag.surfaces[0].indices.map(i => flag.vertices[i]);
+function twiceArea(points) {
+  return Math.abs(points.reduce((area, [x, y], i) => {
+    const [nx, ny] = points[(i + 1) % points.length];
+    return area + x * ny - y * nx;
+  }, 0));
+}
+for (const name of ['rusf', 'ukrf', 'usaf', 'turf']) {
+  for (const dir of dosFiles.has(name) ? ['', 'dos'] : ['']) {
+    const model = JSON.parse(await readFile(path.join(dist, 'data/models', dir, name + '.json'), 'utf8'));
+    const art = model.nodes[0], points = flagOnCloth(art, cloth);
+    // Russia and Ukraine use adjacent stripes. The US and Turkish designs
+    // put their detail on a single polygon covering the whole flag.
+    const field = name === 'rusf' || name === 'ukrf' ? art.surfaces : [art.surfaces[0]];
+    const covered = field.reduce((area, face) => area + twiceArea(face.indices.map(i => points[i])), 0);
+    assert(Math.abs(covered - twiceArea(cloth)) < 1e-6, name + ' artwork leaves cloth exposed');
+  }
+}
+const sequence = random(1);
+sequence(682);
+sequence(682);
+const resumed = random(sequence.state);
+for (let i = 0; i < 12; i++) assert.equal(resumed(682), sequence(682), 'Flag sequence must resume after the last draw');
 for (const name of ['tu95', 'tu95c', 'tu142']) {
   const shape = JSON.parse(await readFile(path.join(dist, 'data/models', name + '.json'), 'utf8'));
   const raw = parameterDefinitions(shape, {registry: catalog.registry}).controls;

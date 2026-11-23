@@ -86,6 +86,15 @@ try{
  assert.equal(await page.locator('#edition').inputValue(),'dos');
  assert.equal(new URL(page.url()).search,'');
  assert.equal(await page.locator('#parameter-12').inputValue(),'326');
+ const flutter = page.getByRole('checkbox', {name:'Animate flags, canopies and effects'});
+ assert.equal(await flutter.isChecked(),false);
+ const frame = () => page.locator('#view').evaluate(canvas => canvas.toDataURL());
+ const still = await frame();
+ await flutter.check();
+ await page.waitForFunction(previous => document.getElementById('view').toDataURL() !== previous,still,{polling:100});
+ await flutter.uncheck();await settled();
+ const paused = await frame();await page.waitForTimeout(250);
+ assert.equal(await frame(),paused,'Paused ship flags moved');
  await ready('models/#katersm2');await settled();
  assert.equal(await page.locator('#edition').inputValue(),'dos');
  await ready('models/#katersm4');await settled();
