@@ -36,7 +36,7 @@ export function parameterDefinitions(model, catalog) {
   const overrides = new Map((known?.controls || []).map(d => [d.id, d]));
   return {...known, controls: [...refs.values()].sort((a, b) => a.id - b.id)
       .map(d => ({...d, ...overrides.get(d.id)})),
-    note: known?.note || 'Unlabelled controls use the stored model curves. Their simulation meanings have not yet been assigned here.'};
+    note: known?.note || (refs.size ? 'Unlabelled controls use the stored model curves.' : '')};
 }
 
 export function parameterValue(definition, value) {

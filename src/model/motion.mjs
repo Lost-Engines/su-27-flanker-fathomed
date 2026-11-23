@@ -22,6 +22,23 @@ export function restoreMotionCommands(model, repairs) {
   }
 }
 
+// Some meshes also use a flags word directly as a rotation angle.
+export function wordAngleControl(name, onAngle) {
+  const label = document.createElement('label'), input = document.createElement('input');
+  const output = document.createElement('output');
+  input.type = 'range';
+  input.min = 0;
+  input.max = 16383;
+  input.setAttribute('aria-label', name);
+  input.oninput = () => onAngle(Number(input.value));
+  label.append(name, input, output);
+  return {label, sync(word) {
+    const angle = word & 16383;
+    input.value = angle;
+    output.value = Math.round(angle * 360 / 16384) + '°';
+  }};
+}
+
 export function createMotionControls(box, changed) {
   const toggle = document.createElement('input');
   toggle.type = 'checkbox';

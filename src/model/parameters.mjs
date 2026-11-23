@@ -1,3 +1,4 @@
+import {wordAngleControl} from './motion.mjs';
 import {parameterValue} from './parameter-definitions.mjs';
 function readout(d, value) {
   if (d.label === 'Wing sweep (Mach input)') return `Mach ${(value / 4096).toFixed(2)}`;
@@ -19,6 +20,19 @@ export function renderParameters(box, schema, parameters, changed) {
         input.type = 'checkbox'; input.checked = Boolean(parameters[d.id] & bit.value); input.dataset.bit = bit.value;
         input.onchange = () => { parameters[d.id] = input.checked ? parameters[d.id] | bit.value : parameters[d.id] & ~bit.value; changed(); };
         label.append(input, document.createTextNode(bit.label)); fieldset.append(label);
+      }
+      if (d.word_control) {
+        const angle = wordAngleControl(d.word_control, v => {
+          parameters[d.id] = (parameters[d.id] & 0xc000) | v;
+          for (const input of fieldset.querySelectorAll('[data-bit]')) {
+            input.checked = Boolean(parameters[d.id] & Number(input.dataset.bit));
+          }
+          angle.sync(parameters[d.id]);
+          changed();
+        });
+        angle.sync(parameters[d.id]);
+        fieldset.addEventListener('change', () => angle.sync(parameters[d.id]));
+        fieldset.append(angle.label);
       }
       row.append(fieldset);
     } else {

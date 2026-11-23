@@ -19,7 +19,13 @@ assert.equal(names.size,364,'Expected the complete SCE 1.5 model library');
 assert.equal(names.size,catalog.models.length);
 for(const group of catalog.categories)assert.equal(catalog.models.filter(m=>m.category===group.id).length,group.count);
 for(const model of catalog.models){
-  assert(all.has(path.join(dist,'data/models',model.name+'.json')),`Missing model ${model.name}`);
+  const shape = JSON.parse(await readFile(path.join(dist, 'data/models', model.name + '.json'), 'utf8'));
+  const schema = parameterDefinitions(shape, catalog);
+  assert(schema.controls.every(d => !/^Parameter \d+$/.test(d.label)), model.name + ' has an unnamed control');
+  if (schema.evidence?.endsWith('#shared-model-controls')) {
+    const raw = parameterDefinitions(shape, {registry: catalog.registry});
+    assert.deepEqual(schema.controls.map(d => d.id), raw.controls.map(d => d.id), model.name + ' mesh inputs');
+  }
   if(model.thumbnail)assert(all.has(path.join(dist,'data/models',model.thumbnail.split('?')[0])));
   else assert.equal(model.name,'airbase','Only the empty airbase marker has no thumbnail');
   for(const d of catalog.parameter_controls[model.name]?.controls||[])if(d.kind==='select')for(const o of d.options){

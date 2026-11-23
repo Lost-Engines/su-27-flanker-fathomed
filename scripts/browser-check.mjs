@@ -49,6 +49,15 @@ try{
   assert(!first.equals(await page.locator('#view').screenshot()),name+' angle did not change the image');
   await page.locator('#play-motion').check();await page.waitForFunction(({id,v})=>Number(document.getElementById(id).value)!==v,{id:'motion-'+slot,v:value});await page.locator('#play-motion').uncheck();
  }
+ await page.locator('#model-select').selectOption('jupiter2');await settled();
+ const wheel=page.getByRole('slider',{name:'Main-wheel swivel'});
+ await wheel.fill('4097');await settled();
+ assert.equal(await page.evaluate(()=>window.flankerModelViewer.parameters[0]),4097);
+ const crew=page.getByLabel('Cockpit crew',{exact:true});assert(await crew.isChecked());
+ await crew.uncheck();assert.equal(await wheel.inputValue(),'4096');
+ await page.locator('#model-select').selectOption('pull_rl');await settled();
+ await page.locator('#parameter-26').fill('2048');await settled();
+ assert.equal(await page.evaluate(()=>window.flankerModelViewer.parameters[26]),2048);
  await page.locator('#model-select').selectOption('su27-1');await settled();
  assert(await page.getByLabel('Afterburner',{exact:true}).isVisible());
  // Exercise a representative of each group, including decals and the empty airfield marker.
