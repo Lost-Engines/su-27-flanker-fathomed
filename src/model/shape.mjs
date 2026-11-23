@@ -31,19 +31,29 @@ export function surfaceOrder(node, pose, eye, count) {
 // of the rail, then returns along the same path at a fixed height. Join
 // corresponding posts so a bend at the bow cannot put a triangle on deck.
 export function patternedTriangles(points) {
+  return triangles(points, true);
+}
+export function triangles(points, patterned = false) {
   const sides = points.length / 2, last = points.length - 1;
   if (Number.isInteger(sides) && sides >= 3) {
     const rise = sub(points[last], points[0]);
     if (dot(rise, rise) > 0 && points.slice(1, sides).every((p, i) =>
       p.every((v, axis) => Math.abs(points[last-i-1][axis] - v - rise[axis]) < 1e-6))) {
-      const faces = [];
-      for (let i = 0; i + 1 < sides; i++)
-        faces.push([i, i+1, last-i-1], [i, last-i-1, last-i]);
-      return faces;
+      // Keep the existing diagonals on planar shaded faces. Vertex colours
+      // interpolate across them. A folded strip needs a separate quad per bay.
+      const offsets = points.slice(1, sides).map(p => sub(p, points[0]));
+      const normal = offsets.map(v => cross(rise, v)).find(n => Math.hypot(...n) > 1e-6);
+      const tolerance = normal ? Math.hypot(...normal) * 1e-6 : 0;
+      if (patterned || (normal && offsets.some(v => Math.abs(dot(normal, v)) > tolerance))) {
+        const faces = [];
+        for (let i = 0; i + 1 < sides; i++)
+          faces.push([i, i+1, last-i-1], [i, last-i-1, last-i]);
+        return faces;
+      }
     }
   }
-  return triangles(points);
+  return planarTriangles(points);
 }
 // Ear clipping handles concave silhouettes and lettering. A vertex on an ear
 // boundary must block that ear too, or triangulation can cut across a notch.
-export function triangles(points){if(points.length<3)return[];let n=cross(sub(points[1],points[0]),sub(points[2],points[0])),axis=n.map(Math.abs).indexOf(Math.max(...n.map(Math.abs))),axes=[0,1,2].filter(a=>a!==axis),q=points.map(p=>axes.map(a=>p[a]));const area=(a,b,c)=>(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);let orientation=Math.sign(q.reduce((s,a,i)=>{let b=q[(i+1)%q.length];return s+a[0]*b[1]-b[0]*a[1]},0))||1,ids=q.map((_,i)=>i),out=[],guard=0;while(ids.length>3&&guard++<points.length**2){let clipped=false;for(let k=0;k<ids.length;k++){let a=ids[(k+ids.length-1)%ids.length],b=ids[k],c=ids[(k+1)%ids.length];if(area(q[a],q[b],q[c])*orientation<=1e-8)continue;if(ids.some(d=>d!==a&&d!==b&&d!==c&&area(q[a],q[b],q[d])*orientation>=-1e-8&&area(q[b],q[c],q[d])*orientation>=-1e-8&&area(q[c],q[a],q[d])*orientation>=-1e-8))continue;out.push([a,b,c]);ids.splice(k,1);clipped=true;break}if(!clipped)break}if(ids.length===3)out.push(ids);if(!out.length)for(let i=1;i+1<points.length;i++)out.push([0,i,i+1]);return out}
+function planarTriangles(points){if(points.length<3)return[];let n=cross(sub(points[1],points[0]),sub(points[2],points[0])),axis=n.map(Math.abs).indexOf(Math.max(...n.map(Math.abs))),axes=[0,1,2].filter(a=>a!==axis),q=points.map(p=>axes.map(a=>p[a]));const area=(a,b,c)=>(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);let orientation=Math.sign(q.reduce((s,a,i)=>{let b=q[(i+1)%q.length];return s+a[0]*b[1]-b[0]*a[1]},0))||1,ids=q.map((_,i)=>i),out=[],guard=0;while(ids.length>3&&guard++<points.length**2){let clipped=false;for(let k=0;k<ids.length;k++){let a=ids[(k+ids.length-1)%ids.length],b=ids[k],c=ids[(k+1)%ids.length];if(area(q[a],q[b],q[c])*orientation<=1e-8)continue;if(ids.some(d=>d!==a&&d!==b&&d!==c&&area(q[a],q[b],q[d])*orientation>=-1e-8&&area(q[b],q[c],q[d])*orientation>=-1e-8&&area(q[c],q[a],q[d])*orientation>=-1e-8))continue;out.push([a,b,c]);ids.splice(k,1);clipped=true;break}if(!clipped)break}if(ids.length===3)out.push(ids);if(!out.length)for(let i=1;i+1<points.length;i++)out.push([0,i,i+1]);return out}

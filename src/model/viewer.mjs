@@ -17,7 +17,13 @@ const editions = {
         root: canvas.dataset.dosRoot || '../../extracted/shapes/dos_1_1/', shared: new Set(dos.shared),
         models: new Map(), pending: new Map()}
 };
-let preferredEdition = new URL(location.href).searchParams.get('edition') === 'dos' ? 'dos' : 'sce';
+const requestedEdition = new URL(location.href).searchParams.get('edition');
+let preferredEdition = Object.hasOwn(editions, requestedEdition) ? requestedEdition : null;
+function editionFor(name) {
+  if (!Object.hasOwn(dos.models, name)) return 'sce';
+  // Both Tarantuls have the open deck railings and lattice mast in DOS.
+  return preferredEdition ?? (name === 'katersm4' || name === 'katersm2' ? 'dos' : 'sce');
+}
 let library = editions.sce, catalog = sce;
 const shader=(type,src)=>{let s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s));return s};
 const program=gl.createProgram();gl.attachShader(program,shader(gl.VERTEX_SHADER,`#version 300 es
@@ -216,7 +222,7 @@ function clocks(name) {
 async function select(name) {
   const token = ++request;
   const available = Object.hasOwn(dos.models, name);
-  const edition = available ? preferredEdition : 'sce';
+  const edition = editionFor(name);
   const source = editions[edition];
   try {
     const model = await loadModel(name, source);
@@ -238,7 +244,7 @@ async function select(name) {
       'Group: ' + group.label, entry.display_name, 'Classification: ' + entry.classification_source
     ].join('\n');
     const url = new URL(location.href);
-    if (preferredEdition === 'dos') url.searchParams.set('edition','dos');
+    if (preferredEdition) url.searchParams.set('edition', preferredEdition);
     else url.searchParams.delete('edition');
     url.hash = name;
     history.replaceState(null, '', url);
@@ -256,7 +262,7 @@ async function select(name) {
   }
 }
 const browser = createModelBrowser(sce, select, root, model =>
-  preferredEdition === 'dos' && Object.hasOwn(dos.models, model.name)
+  editionFor(model.name) === 'dos'
     ? dos.parameter_controls[model.name].controls.length + dos.models[model.name].length
     : model.parameter_count + (model.motion_clocks?.length || 0));
 $('edition').onchange = () => { preferredEdition = $('edition').value; select(selected.name); };

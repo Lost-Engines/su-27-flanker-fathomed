@@ -4,6 +4,7 @@ import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 import {parse} from 'parse5';
 import {spawnSync} from 'node:child_process';
+import {cross,sub,triangles,patternedTriangles} from '../src/model/shape.mjs';
 import {parameterDefinitions} from '../src/model/parameter-definitions.mjs';
 const root=path.resolve(fileURLToPath(new URL('../',import.meta.url))),dist=path.join(root,'dist');
 async function walk(dir){const result=[];for(const entry of await readdir(dir,{withFileTypes:true})){const file=path.join(dir,entry.name),s=await lstat(file);assert(!s.isSymbolicLink(),`Symlink in artifact: ${file}`);if(entry.isDirectory())result.push(...await walk(file));else result.push(file);}return result;}
@@ -45,6 +46,30 @@ for (const name of Object.keys(dos.models)) {
     if(o.value) assert(available.has(dos.registry[o.value]),'Missing DOS attachment '+o.label);
   for (const node of shape.nodes) for (const face of node.surfaces)
     if (face.kind===17 && face.reference) assert(available.has(dos.registry[face.reference]),name+' fixed attachment');
+}
+for (const name of ['katersm4', 'katersm2']) {
+  for (const edition of ['', 'dos']) {
+    const shape = JSON.parse(await readFile(path.join(dist, 'data/models', edition, name + '.json'), 'utf8'));
+    const hull = shape.nodes[0];
+    const rails = hull.surfaces.filter(face => face.indices?.length === 16);
+    assert.equal(rails.length, 2, name + ' bow rails');
+    for (const rail of rails) {
+      assert.equal(rail.kind, edition === 'dos' ? 3 : 2);
+      if (edition === 'dos') {
+        assert.equal(rail.pattern, 3);
+        assert.equal(rail.pattern_colour, 65535);
+      }
+      const points = rail.indices.map(i => hull.vertices[i]);
+      const faces = edition === 'dos' ? patternedTriangles(points) : triangles(points);
+      assert.equal(faces.length, 14, name + ' seven rail panels');
+      for (const indices of faces) {
+        const [a, b, c] = indices.map(i => points[i]);
+        const normal = cross(sub(b, a), sub(c, a));
+        assert(Math.hypot(...normal) > 0);
+        assert.equal(Math.abs(normal[1]), 0, name + ' rail crosses the deck');
+      }
+    }
+  }
 }
 for (const name of ['tu95', 'tu95c', 'tu142']) {
   const shape = JSON.parse(await readFile(path.join(dist, 'data/models', name + '.json'), 'utf8'));
