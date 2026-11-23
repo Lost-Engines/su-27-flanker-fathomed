@@ -4,6 +4,7 @@ import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 import {parse} from 'parse5';
 import {spawnSync} from 'node:child_process';
+import {parameterDefinitions} from '../src/model/parameter-definitions.mjs';
 const root=path.resolve(fileURLToPath(new URL('../',import.meta.url))),dist=path.join(root,'dist');
 async function walk(dir){const result=[];for(const entry of await readdir(dir,{withFileTypes:true})){const file=path.join(dir,entry.name),s=await lstat(file);assert(!s.isSymbolicLink(),`Symlink in artifact: ${file}`);if(entry.isDirectory())result.push(...await walk(file));else result.push(file);}return result;}
 const files=await walk(dist),all=new Set(files),documents=new Map();let bytes=0;
@@ -24,6 +25,23 @@ for(const model of catalog.models){
   for(const d of catalog.parameter_controls[model.name]?.controls||[])if(d.kind==='select')for(const o of d.options){
     if(o.value)assert(names.has(catalog.registry[o.value]),`Missing attachment ${o.value}`);
   }
+}
+for (const name of ['tu95', 'tu95c', 'tu142']) {
+  const shape = JSON.parse(await readFile(path.join(dist, 'data/models', name + '.json'), 'utf8'));
+  const raw = parameterDefinitions(shape, {registry: catalog.registry}).controls;
+  const {controls, preview} = catalog.parameter_controls[name];
+  assert.deepEqual(controls.map(d => d.id), raw.map(d => d.id), name + ' local parameters');
+  assert.deepEqual(controls.find(d => d.id === 0).bits.map(b => b.value), [1, 16, 32]);
+  assert.equal(preview.parameters[0], 17);
+  const choices = id => controls.find(d => d.id === id).options.map(o => o.value ? catalog.registry[o.value] : null);
+  assert.deepEqual(choices(10), [null, 'rusf', 'ukrf', 'usaf', 'turf']);
+  assert.deepEqual(choices(12), [null, ...Array.from({length: 16}, (_, i) => 'n' + String(i + 1).padStart(2, '0'))]);
+  const numberOverlay = catalog.attachment_overlays[name].SubHalf;
+  assert.equal(numberOverlay.parameter, 12);
+  assert.deepEqual(numberOverlay.models, choices(12).slice(1));
+  const pylons = controls.filter(d => d.id >= 18 && d.id <= 21);
+  assert.equal(pylons.length, name === 'tu142' ? 0 : 4);
+  for (const pylon of pylons) assert.deepEqual(choices(pylon.id), [null, 'x55']);
 }
 assert.equal(catalog.models.filter(m=>m.motion_clocks?.length).length,39);
 const missions=JSON.parse(await readFile(path.join(dist,'data/map/missions.json'),'utf8'));assert.equal(missions.length,8);assert.equal(new Set(missions.map(m=>m.id)).size,8);
