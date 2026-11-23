@@ -24,12 +24,49 @@ try{
  assert.equal(new URL(page.url()).pathname,new URL(base).pathname,'Exhibit anchor should stay on the overview');
  console.log('Overview cards, separate article and existing article-section links passed.');
  await ready('models/');await settled();assert.equal(await page.locator('#perturb').isChecked(),false,'Reduced motion ignored');
- const models=await page.locator('#model-select option').evaluateAll(o=>o.map(x=>x.value));assert.equal(models.length,18);
- for(const name of models){await page.locator('#model-select').selectOption(name);await settled();assert(await page.evaluate(()=>window.flankerModelViewer.stats.primitives>0),`Empty default model: ${name}`);
-  const controls=await page.evaluate(()=>window.flankerModelViewer.controlDefinitions.controls);
-  for(const d of controls){const values=d.kind==='select'?d.options.map(o=>o.value):d.kind==='bits'?[0,...d.bits.map(b=>b.value)]:[d.min,Math.round((d.min+d.max)/2),d.max];for(const value of values){await page.evaluate(({id,value})=>window.flankerModelViewer.setParameter(id,value),{id:d.id,value});await settled();}}
+ const models=await page.locator('#model-select option').evaluateAll(o=>o.map(x=>x.value));assert.equal(models.length,364);
+ const unrendered=await page.evaluate(async names=>{
+  const api=window.flankerModelViewer,failed=[];
+  const frame=()=>new Promise(resolve=>requestAnimationFrame(resolve));
+  for(const name of names){
+   await api.select(name);await frame();await frame();
+   const deadline=performance.now()+4000;
+   while(api.stats.missing.length && performance.now()<deadline)await frame();
+   if(api.selected!==name || api.stats.missing.length)failed.push([name,api.stats.missing]);
+  }
+  return failed;
+ },models);
+ assert.deepEqual(unrendered,[],'Some catalogue entries or attachments failed to load');
+ await page.locator('#category').selectOption('air_defence');
+ await page.locator('#search').fill('rls1');assert.deepEqual(await page.locator('#models button').evaluateAll(bs=>bs.map(b=>b.dataset.name)),['rls1','rls113']);
+ await page.locator('#models button[data-name=rls1]').click();await settled();assert.equal(await page.locator('#model-select').inputValue(),'rls1');
+ await page.locator('#search').fill('');await page.locator('#category').selectOption('all');
+ for(const [name,slot,value] of [['rls',4,2048],['rls1',1,4096],['tu95',1,1700],['tu95c',2,1700],['tu142',1,1700],['rsbn',3,2048]]){
+  await page.locator('#model-select').selectOption(name);await settled();
+  const slider=page.locator('#motion-'+slot);assert(await slider.isVisible(),name);
+  const first=await page.locator('#view').screenshot();
+  await slider.fill(String(value));await settled();assert(!await page.locator('#play-motion').isChecked());
+  assert(!first.equals(await page.locator('#view').screenshot()),name+' angle did not change the image');
+  await page.locator('#play-motion').check();await page.waitForFunction(({id,v})=>Number(document.getElementById(id).value)!==v,{id:'motion-'+slot,v:value});await page.locator('#play-motion').uncheck();
  }
- console.log('All 18 models and all exposed attachment, flag and slider controls loaded without missing shapes.');
+ await page.locator('#model-select').selectOption('su27-1');await settled();
+ assert(await page.getByLabel('Afterburner',{exact:true}).isVisible());
+ // Exercise a representative of each group, including decals and the empty airfield marker.
+ for(const name of ['bmp_2','akr','epilot','expl_03','betab500','hangar','car1','rusf','truba','airbase']){
+  await page.locator('#model-select').selectOption(name);await settled();assert.equal(await page.evaluate(()=>window.flankerModelViewer.selected),name);
+ }
+ await page.locator('#model-select').selectOption('akr');await settled();const flag=await page.locator('#parameter-21 option').evaluateAll(opts=>opts.find(o=>o.textContent.toLowerCase().includes('usaf')).value);
+ await page.locator('#parameter-21').selectOption(flag);await settled();
+ // Keep exercising the previously published cockpit, vehicle and effect controls.
+ for(const [name,ids] of Object.entries({su27:[0,4,6,13,14,10],'su27-1':[0,4,13],mig23:[17],f15:[0,4,13],il76:[0,4,9,26,27],akr:[0,1,2,21],bpk:[0,1,2,51],bmp_2:[0,1,2],buk_pzu:[0,1,2],chear:[0,3],epilot:[3,1,2],betab500:[0],agm65:[0],expl_03:[1]})){
+  await page.locator('#model-select').selectOption(name);await settled();
+  const controls=await page.evaluate(()=>window.flankerModelViewer.controlDefinitions.controls);
+  for(const d of controls.filter(d=>ids.includes(d.id))){
+   const values=d.kind==='select'?d.options.map(o=>o.value):d.kind==='bits'?[0,...d.bits.map(b=>b.value)]:[d.min,Math.round((d.min+d.max)/2),d.max];
+   for(const value of values){await page.evaluate(({id,value})=>window.flankerModelViewer.setParameter(id,value),{id:d.id,value});await settled();}
+  }
+ }
+ console.log('Rendered all 364 models and checked filtering, manual angles, playback, flags and attachments.');
  await page.locator('#model-select').selectOption('su27');await settled();await page.locator('#parameter-4').fill('0');await page.locator('#parameter-4').dispatchEvent('input');await settled();const before=await page.locator('#view').screenshot();
  await page.locator('#parameter-4').fill('16384');await page.locator('#parameter-4').dispatchEvent('input');await settled();const after=await page.locator('#view').screenshot();assert(!before.equals(after),'Landing gear did not change the rendered image');
  const camera=await page.evaluate(()=>window.flankerModelViewer.camera);await page.locator('#view').focus();await page.keyboard.press('ArrowRight');assert((await page.evaluate(()=>window.flankerModelViewer.camera.yaw))>camera.yaw);await page.getByRole('button',{name:'Zoom in',exact:true}).click();assert((await page.evaluate(()=>window.flankerModelViewer.camera.zoom))>camera.zoom);

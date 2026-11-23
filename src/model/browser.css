@@ -1,0 +1,21 @@
+.model-filter { display: block; margin-bottom: 6px; }
+#category { display: block; width: 100%; margin-bottom: 10px; }
+#model-count { margin: 8px 0; font-size: .85rem; }
+#models { display: block; max-height: 66vh; }
+#models .model-group { margin: 0 0 6px; border-bottom: 1px solid var(--line); padding-bottom: 5px; }
+.model-group summary { cursor: pointer; padding: 9px 4px; font-size: .9rem; font-weight: 600; }
+.model-group summary small { margin-left: 8px; font-weight: 400; font-variant-numeric: tabular-nums; }
+#models button { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 8px; align-items: center; padding: 6px; }
+#models .model-thumbnail { display: block; width: 56px; height: 42px; overflow: hidden; border-radius: 3px; background: #0e161f; }
+#models .model-thumbnail img { display: block; width: 100%; height: 100%; object-fit: contain; }
+#models .model-thumbnail.unavailable::after { content: '—'; display: grid; place-items: center; height: 100%; color: var(--muted); }
+#models .model-caption { display: block; min-width: 0; }
+#models button .model-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 6px; }
+#models button .model-name { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+#models button .model-parameter-count { flex: none; font-size: .72rem; opacity: .75; white-space: nowrap; font-variant-numeric: tabular-nums; }
+#models button small { display: block; overflow-wrap: anywhere; font-size: .78rem; line-height: 1.35; }
+#models button.selected small { color: inherit; }
+.model-group summary:focus-visible, #models button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+@media(max-width:850px) { #models { max-height: 240px; } }
+
+#effect-framing[hidden] { display: none; }

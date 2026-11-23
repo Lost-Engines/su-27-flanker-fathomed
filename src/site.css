@@ -81,11 +81,6 @@ main{min-height:70vh}
 .controls hr{border:0;border-top:1px solid var(--line);margin:1rem 0}
 .muted,.help{color:var(--muted);font-size:.85rem;line-height:1.6}
 .model-note{line-height:1.6;max-width:850px;margin:1.2rem 0}
-.model-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:.6rem;margin-top:1rem}
-.model-grid button{padding:0;overflow:hidden;text-align:left;font-size:.75rem;background:var(--dark);color:#dde4d8;border-color:#344950}
-.model-grid button[aria-pressed=true]{outline:3px solid var(--accent);outline-offset:1px}
-.model-grid button img{width:100%;aspect-ratio:4/3;object-fit:cover}
-.model-grid button span{display:block;padding:.5rem .6rem}
 .viewer-details{margin:1.6rem 0;padding:1rem 0;border-block:1px solid var(--line)}
 #model-fallback{background:var(--dark);max-height:535px;object-fit:contain;width:100%}
 #model-fallback[hidden]{display:none}
@@ -131,7 +126,6 @@ noscript{display:block;padding:1rem;border:1px solid var(--line);margin:1rem 0}
 .toc{position:static;max-width:720px;margin:auto;width:100%;border-bottom:1px solid var(--line);padding-bottom:1rem}
 .toc ol{columns:2;column-gap:2rem}
 .hero-inner{grid-template-columns:1fr 1fr}
-.model-grid{grid-template-columns:repeat(4,1fr)}
 .viewer-layout{grid-template-columns:minmax(0,1fr) 250px}
 .stage canvas{height:475px}
 .map-layout{grid-template-columns:minmax(0,1fr) 280px}
@@ -154,7 +148,6 @@ nav{gap:1.1rem;margin-top:.85rem}
 .stage canvas{height:390px}
 .controls{max-height:none;display:block}
 .controls #params{display:grid;grid-template-columns:1fr 1fr;gap:0 1.4rem}
-.model-grid{grid-template-columns:repeat(3,1fr)}
 .exhibit{padding:0 1rem}
 .page-heading{padding:0 1rem;margin-top:2rem}
 #map{height:470px}
@@ -205,3 +198,22 @@ nav{gap:1.1rem;margin-top:.85rem}
 @media(max-width:1050px){.section-heading{display:block}.section-heading p{max-width:none}.exhibit-cards{gap:1rem}.play-links{display:block}.play-links .actions{margin-top:1.5rem}}
 @media(max-width:720px){.hero .actions{gap:.65rem}.home-section{padding:2.5rem 1rem}.exhibit-cards{grid-template-columns:1fr;gap:1.5rem}.exhibit-card>img{max-height:270px}.exhibit-card>div{padding:1.1rem}.investigation-link{grid-template-columns:1fr;gap:1.6rem}.section-heading h2{margin-bottom:.6rem}.play-links{padding-bottom:3rem}.site-header nav{gap:.65rem 1.1rem}.site-header nav a{font-size:.8rem}}
 @media(prefers-reduced-motion:reduce){.exhibit-card{transition:none}}
+
+.model-workbench{display:grid;grid-template-columns:minmax(200px,260px) minmax(0,1fr);gap:1rem;align-items:start}
+.model-browser{background:var(--panel);padding:.8rem;border:1px solid var(--line)}
+.model-browser label{display:block;font-size:.85rem;margin-bottom:.3rem}
+.model-browser input,.model-browser select{width:100%;min-width:0}
+.model-browser #models{overflow-y:auto;overscroll-behavior:contain}
+.model-browser #models button{width:100%;text-align:left;background:var(--dark);border-color:var(--line);color:var(--ink)}
+.model-browser #models button.selected{color:var(--accent);border-color:currentColor}
+.model-library #model-select{min-width:0;max-width:min(100%,29rem)}
+.model-display{min-width:0}
+.model-display .status:empty,.model-display #viewer-error:empty,.model-display #model-description:empty,.model-display #effect-framing[hidden]{display:none}
+.model-display #motion:not([hidden]){display:grid;gap:.5rem;padding:.8rem;margin-bottom:1rem;background:var(--panel)}
+.model-display #motion>div{display:flex;align-items:center;gap:.65rem}
+.model-display #motion input[type=range]{flex:1;min-width:4rem}
+.model-display #motion output{min-width:4.2em;text-align:right;font-variant-numeric:tabular-nums}
+.model-settings{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:.8rem}
+.model-settings .model-parameter{margin:0;min-width:0;padding:.8rem;background:var(--panel)}
+.model-settings fieldset{min-width:0}
+@media(max-width:760px){.model-workbench{display:flex;flex-direction:column}.model-display,.model-browser{width:100%}.model-browser{order:2}.model-library #model-select{max-width:100%}.model-display .stage canvas{height:clamp(260px,56vh,480px)}}

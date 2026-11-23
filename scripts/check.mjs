@@ -13,11 +13,21 @@ assert(bytes<20*1024*1024,`Artifact unexpectedly large: ${bytes}`);
 assert.equal(documents.size,6,'Expected the overview, article and four supporting pages');
 for(const[file,{links}]of documents)for(const link of links){if(/^(https?:|mailto:|data:)/.test(link))continue;const url=new URL(link,'https://local/'+path.relative(dist,file));assert.equal(url.origin,'https://local');let target=path.join(dist,decodeURIComponent(url.pathname));if(url.pathname.endsWith('/'))target=path.join(target,'index.html');assert(all.has(target),`Broken link in ${path.relative(dist,file)}: ${link}`);if(url.hash&&target.endsWith('.html')&&!['models','missions','cockpit'].some(route=>target===path.join(dist,route,'index.html')))assert(documents.get(target)?.ids.has(decodeURIComponent(url.hash.slice(1))),`Missing anchor ${link}`);}
 const catalog=JSON.parse(await readFile(path.join(dist,'data/models/viewer.json'),'utf8'));
-assert.equal(catalog.models.length,18);
-for(const name of catalog.available_models)assert(all.has(path.join(dist,'data/models',name+'.json')),`Missing dependency ${name}`);
-for(const model of catalog.models){assert(all.has(path.join(dist,'data/models',model.thumbnail.split('?')[0])));for(const d of catalog.parameter_controls[model.name].controls)if(d.kind==='select')for(const o of d.options){const name=catalog.registry[o.value];if(name)assert(catalog.available_models.includes(name),`Missing attachment ${name}`);}}
+const names=new Set(catalog.models.map(m=>m.name));
+assert.equal(names.size,364,'Expected the complete SCE 1.5 model library');
+assert.equal(names.size,catalog.models.length);
+for(const group of catalog.categories)assert.equal(catalog.models.filter(m=>m.category===group.id).length,group.count);
+for(const model of catalog.models){
+  assert(all.has(path.join(dist,'data/models',model.name+'.json')),`Missing model ${model.name}`);
+  if(model.thumbnail)assert(all.has(path.join(dist,'data/models',model.thumbnail.split('?')[0])));
+  else assert.equal(model.name,'airbase','Only the empty airbase marker has no thumbnail');
+  for(const d of catalog.parameter_controls[model.name]?.controls||[])if(d.kind==='select')for(const o of d.options){
+    if(o.value)assert(names.has(catalog.registry[o.value]),`Missing attachment ${o.value}`);
+  }
+}
+assert.equal(catalog.models.filter(m=>m.motion_clocks?.length).length,39);
 const missions=JSON.parse(await readFile(path.join(dist,'data/map/missions.json'),'utf8'));assert.equal(missions.length,8);assert.equal(new Set(missions.map(m=>m.id)).size,8);
 const cockpit=JSON.parse(await readFile(path.join(dist,'data/cockpit/catalog.json'),'utf8'));for(const entry of cockpit)for(const frame of entry.frames)assert(all.has(path.join(dist,'data/cockpit',frame.file)),`Missing component ${frame.file}`);
 for(const file of await walk(path.join(root,'src'))){if(file.endsWith('.mjs')){const result=spawnSync(process.execPath,['--check',file],{encoding:'utf8'});assert.equal(result.status,0,result.stderr);}}
-console.log(`Checked ${documents.size} pages, all local links/anchors, client syntax, ${catalog.available_models.length} shape dependencies, 8 missions and ${cockpit.length} component sets.`);
+console.log(`Checked ${documents.size} pages, all local links/anchors, client syntax, ${names.size} models, 8 missions and ${cockpit.length} component sets.`);
 console.log(`Pages artifact: ${files.length} files, ${(bytes/1024/1024).toFixed(2)} MiB; no installation media or research work directories.`);

@@ -1,18 +1,9 @@
-// The exhibit catalogue contains only identified, selected controls.
-export function parameterDefinitions(model, catalog) {
-  return catalog.parameter_controls[model.name] || {controls: []};
-}
-export function parameterValue(d, value) {
-  const n = Math.trunc(Number(value));
-  if (!Number.isFinite(n)) return null;
-  if (d.kind === 'select') return d.options.some(o => o.value === n) ? n : null;
-  return Math.max(d.min, Math.min(d.max, n));
-}
+import {parameterValue} from './parameter-definitions.mjs';
 function readout(d, value) {
-  if (d.id === 17) return `Mach ${(value / 4096).toFixed(2)}`;
+  if (d.label === 'Wing sweep (Mach input)') return `Mach ${(value / 4096).toFixed(2)}`;
   if (d.angle) return `${Math.round(value * 360 / 16384)}°`;
   if (d.ticks_per_second) return `Stage ${value}`;
-  if (d.id === 13) return value <= 4096 ? 'Off' : `${Math.round((value - 4096) / (d.max - 4096) * 100)}%`;
+  if (d.label === 'Afterburner') return value <= 4096 ? 'Off' : `${Math.round((value - 4096) / (d.max - 4096) * 100)}%`;
   if (d.min === 0 && d.max === 16384) return `${Math.round(value / 16384 * 100)}%`;
   return String(value);
 }
@@ -44,5 +35,4 @@ export function renderParameters(box, schema, parameters, changed) {
     }
     box.append(row);
   }
-  if (!schema.controls.length) { const p = document.createElement('p'); p.className = 'muted'; p.textContent = 'This exhibit has no animation controls. Drag the model to inspect its shape.'; box.append(p); }
 }

@@ -6,10 +6,8 @@ No executable, archive, install tree, raw mission or validation dump is imported
 """
 from pathlib import Path
 from hashlib import sha256
-from collections import Counter
 import json
 import sys
-import copy as copying
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -28,96 +26,45 @@ def load(path): return json.loads(read(path))
 def dump(path, data): write(path, json.dumps(data, ensure_ascii=False, separators=(',', ':')) + '\n')
 def copy(src, dst): write(dst, read(src))
 
-# Named exhibits and the controls useful to someone exploring them for the first time.
-selection = {
- 'su27': ('Su-27', [0, 4, 6, 13, 14, 10]),
- 'su27-1': ('Su-27 · alternate colours', [0, 4, 13]),
- 'mig23': ('MiG-23', [17]),
- 'f15': ('F-15', [0, 4, 13]),
- 'il76': ('Il-76 transport', [0, 4, 9, 26, 27]),
- 'tu95': ('Tu-95', []),
- 'akr': ('Moskva helicopter cruiser', [0, 1, 2, 21]),
- 'bpk': ('Udaloy destroyer', [0, 1, 2, 51]),
- 'bmp_2': ('BMP-2', [0, 1, 2]),
- 'buk_pzu': ('Buk missile vehicle', [0, 1, 2]),
- 'trproj': ('Searchlight truck', []),
- 'car1': ('Car · the window puzzle', []),
- 'chear': ('Ejection seat', [0, 3]),
- 'epilot': ('Parachutist', [3, 1, 2]),
- 'betab500': ('BetAB-500 bomb', [0]),
- 'agm65': ('AGM-65 missile', [0]),
- 'expl_03': ('Explosion', [1]),
- 'hangar': ('Aircraft hangar', []),
-}
+# Publish the complete catalogue. Each shape is fetched when selected.
 base = 'extracted/shapes/win_1_5/'
 catalog = load(base + 'viewer.json')
-catalog['parameter_controls']['su27-1'] = copying.deepcopy(catalog['parameter_controls']['su27'])
-entries = {m['name']: m for m in catalog['models']}
-for name in selection:
-    if name not in entries: raise ValueError('Unknown exhibit: ' + name)
-# Keep attachment choices and defaults in the closure, including nested references.
-queue = list(selection)
-models = {}
-while queue:
-    name = queue.pop()
-    if name in models: continue
-    model = load(base + name + '.json')
-    models[name] = model
-    dependencies = set()
-    for node in model['nodes']:
-        # Defaults may feed a parameter-shape command in a child with a parameter offset.
-        for value in node['parameters']:
-            if str(value) in catalog['registry']: dependencies.add(catalog['registry'][str(value)])
-        for surface in node['surfaces']:
-            if surface['kind'] == 17:
-                ref = surface.get('name') or catalog['registry'].get(str(surface.get('reference')))
-                if ref: dependencies.add(ref)
-    for control in catalog['parameter_controls'].get(name, {}).get('controls', []):
-        if control['kind'] == 'select':
-            dependencies.update(catalog['registry'][str(o['value'])] for o in control['options'] if str(o['value']) in catalog['registry'])
-    for dep in sorted(dependencies):
-        if (SOURCE / base / (dep + '.json')).exists() and dep not in models: queue.append(dep)
-for name, model in sorted(models.items()): dump('public/data/models/' + name + '.json', model)
-catalog['models'] = [dict(entries[n], display_name=label) for n, (label, _) in selection.items()]
-counts = Counter(m['category'] for m in catalog['models'])
-catalog['categories'] = [dict(g, count=counts[g['id']]) for g in catalog['categories'] if counts[g['id']]]
-for name, (_, ids) in selection.items():
-    schema = catalog['parameter_controls'].get(name, {})
-    schema['controls'] = [d for d in schema.get('controls', []) if d['id'] in ids]
-    schema['partial'] = False
-    schema.pop('note', None)
-    # Friendly, visible starting poses; reset returns to these exhibit poses.
-    if name == 'epilot': schema['preview'] = {'parameters': {'1': 4096, '2': 0, '3': 38}}
-    if name == 'chear': schema['preview'] = {'parameters': {'0': 1, '1': 4096, '2': 0, '3': 26}}
-    catalog['parameter_controls'][name] = schema
-    copy(base + entries[name]['thumbnail'].split('?')[0], 'public/data/models/' + entries[name]['thumbnail'].split('?')[0])
-for key in ['parameter_controls','surface_overlays','surface_supports','attachment_overlays']:
-    catalog[key] = {n: v for n, v in catalog[key].items() if n in models}
-catalog['available_models'] = sorted(models)
-dump('public/data/models/viewer.json', catalog)
-for name in ['shape.mjs', 'depth.mjs']:
-    copy('analysis/models/' + name, 'src/model/' + name)
-# Renderer stays recognisably the research renderer. UI, data root and lifecycle are adapted.
-viewer = read('analysis/models/viewer.mjs').decode()
-viewer = viewer.replace("const root='../../extracted/shapes/win_1_5/'", "const root='../data/models/'")
-viewer = viewer.replace('Run tools/export_model_viewer.py first.', 'The model data could not be loaded. Please reload the page.')
-viewer = viewer.replace('parameters=modelParameters();controls()', 'parameters=modelParameters(true);controls()')
-viewer = viewer.replace("await select(location.hash.slice(1)||'su27');", "await select(catalog.models.some(m=>m.name===location.hash.slice(1))?location.hash.slice(1):'su27');")
-viewer = viewer.replace("const dpr=devicePixelRatio||1", "const dpr=devicePixelRatio||1")
-# Avoid animating hidden pages or disregarding a visitor's reduced-motion preference.
-viewer = viewer.replace('function tick(time){', 'function tick(time){if(document.hidden){requestAnimationFrame(tick);return;}')
-viewer = viewer.replace('window.flankerModelViewer={select,', 'window.flankerModelViewer={select,get camera(){return {yaw,pitch,zoom}},setCamera(y,p,z=1){yaw=y;pitch=p;zoom=z;dirty=true},')
-# Fit the current projected silhouette: wide aircraft should use the wide stage,
-# while tall figures retain enough vertical room. Limit the initial enlargement.
-viewer = viewer.replace("  zoom = 1;\n  dirty = true;\n}\nfunction modelParameters", """  const forward = normalise([Math.cos(pitch)*Math.cos(yaw), Math.sin(pitch), Math.cos(pitch)*Math.sin(yaw)]);
-  const right = normalise(cross([0,1,0], forward)), up = cross(forward, right);
-  const aspect = canvas.clientWidth / canvas.clientHeight || 1;
-  const extent = Math.max(1, ...points.map(p => Math.max(Math.abs(dot(right, sub(p,bounds.center))) / aspect, Math.abs(dot(up, sub(p,bounds.center))))));
-  zoom = Math.min(1.7, bounds.radius / (extent * Math.min(1,aspect)));
-  dirty = true;
+models = [entry['name'] for entry in catalog['models']]
+notes = {
+ 'su27': 'One aircraft, 41 shape nodes. Extend the gear to watch the doors and struts follow their own curves.',
+ 'su27-1': 'One of the 26 additional Su-27 colour schemes. Missions select these as aircraft types; they share geometry and flight data.',
+ 'mig23': 'The wing-sweep curves follow the aircraft’s Mach number, with two short transitions separated by plateaux.',
+ 'f15': 'The F-15 uses the same broad arrangement of state flags, flight controls and attachment slots as the Su-27.',
+ 'il76': 'The ramp waits until the cargo doors begin opening, then lowers. Try extending the gear as well.',
+ 'tu95': 'A large aircraft built from a small number of shaded polygons. Each engine has two rows of propellers turning in opposite directions.',
+ 'akr': 'Moskva, a helicopter cruiser. These controls operate the first gun mount and the flag insignia.',
+ 'bpk': 'The game identifies this ship as Udaloy. Its radar antennas use two different rotation speeds.',
+ 'bmp_2': 'A rotating turret, elevating barrel and firing effect are separate from the hull and running gear.',
+ 'buk_pzu': 'The state word selects which missiles are still present. The whole launcher then rotates and elevates.',
+ 'trproj': 'The searchlight truck is a static model. The lamp, cab and wheels are assembled from ten shape nodes.',
+ 'car1': 'The original paints the windows over the body even where the geometry intersects. This preview adapts those two faces to preserve the intended appearance.',
+ 'chear': 'The seat’s rockets fade before its drogue parachute extends. The pilot later separates into the epilot model.',
+ 'epilot': 'Scrub the deployment stage to open the parachute and settle the pilot’s arms and legs. Subtle canopy movement comes from the model’s random transforms.',
+ 'betab500': 'The live bomb starts with its parachute, then switches to the booster. Both can be shown here to inspect the individual parts.',
+ 'agm65': 'A single flag shows the missile’s engine flame.',
+ 'expl_03': 'Several expanding parts and conditional stages form the explosion. Auto-fit keeps it in frame while you scrub its age.',
+ 'hangar': 'A scenery building, drawn from the same shape format as the aircraft and weapons.'
 }
-function modelParameters""")
-write('src/model/viewer.mjs', viewer)
+
+for entry in catalog['models']:
+    if entry['name'] in notes:
+        entry['hint'] = notes[entry['name']]
+    filename = entry['name'] + '.json'
+    copy(base + filename, 'public/data/models/' + filename)
+    if thumbnail := entry.get('thumbnail'):
+        filename = thumbnail.split('?')[0]
+        copy(base + filename, 'public/data/models/' + filename)
+# Exhibition starting poses for the two stages of ejection.
+catalog['parameter_controls']['epilot']['preview'] = {'parameters': {'1': 4096, '2': 0, '3': 38}}
+catalog['parameter_controls']['chear']['preview'] = {'parameters': {'0': 1, '1': 4096, '2': 0, '3': 26}}
+dump('public/data/models/viewer.json', catalog)
+for name in ['shape.mjs', 'depth.mjs', 'motion.mjs', 'parameter-definitions.mjs', 'browser.mjs', 'browser.css', 'viewer.mjs']:
+    copy('analysis/models/' + name, 'src/model/' + name)
 
 mapbase = 'extracted/maps/win_1_5/'
 mapcat = load(mapbase + 'viewer.json')
@@ -172,5 +119,5 @@ for path in notes:
     data = (SOURCE / 'analysis' / path).read_bytes()
     research_sources.append({'source': 'analysis/' + path, 'sha256': sha256(data).hexdigest()})
 
-dump('content/data-provenance.json', {'edition':'Clean Windows Squadron Commander’s Edition 1.5', 'source_repository':'su-27-flanker-reverse (local research tree)', 'models': list(selection), 'model_dependencies': sorted(set(models)-set(selection)), 'imports': records, 'research_sources': research_sources})
-print(f'Imported {len(selection)} exhibits, {len(models)} shapes with dependencies, {len(missions)} missions; {len(records)} explicit source reads.')
+dump('content/data-provenance.json', {'edition':'Clean Windows Squadron Commander’s Edition 1.5', 'source_repository':'su-27-flanker-reverse (local research tree)', 'models': models, 'imports': records, 'research_sources': research_sources})
+print(f'Imported {len(models)} models, {len(missions)} missions; {len(records)} explicit source reads.')

@@ -25,7 +25,7 @@ The existing [C++ validation notes](https://github.com/Lost-Engines/su-27-flanke
 
 ## What the viewers show
 
-**Models.** Eighteen selected shapes, with the additional shapes required for their attachments. The WebGL 2 viewer interprets the recovered transform commands, with lighting and depth handling adapted for inspection. Its controls expose selected animation inputs and attachment choices.
+**Models.** All 364 shapes from Squadron Commander’s Edition 1.5 are available in the viewer. The rocking radar dish and three sets of counter-rotating propellers use their earlier DOS animation commands. Night-light dots are enlarged so you can see them on the aircraft. The original positions, colours and beacon timing are preserved.
 
 **Mission map.** Eight supplied scenarios shown over the normal MAP terrain. The map shows initial aircraft routes and unit positions. Briefings retain their original spelling and control instructions.
 

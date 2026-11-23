@@ -1,0 +1,36 @@
+<section class="exhibit model-library" aria-label="Model explorer">
+  <noscript>The interactive models need JavaScript and WebGL 2. You can also read the <a href="../story/">illustrated article</a>.</noscript>
+  <div class="toolbar">
+    <label for="model-select">Model</label><select id="model-select"></select>
+    <span class="grow"></span><button id="reset">Reset view</button><button id="defaults">Reset model</button>
+  </div>
+  <div class="model-workbench">
+    <aside class="model-browser" aria-label="Browse models">
+      <label for="category">Model group</label><select id="category"></select>
+      <label for="search">Find a model</label><input id="search" type="search" placeholder="Name, role or filename…">
+      <p id="model-count" class="muted" role="status"></p><div id="models"></div>
+    </aside>
+    <div class="model-display">
+      <div class="stage">
+        <h2 class="stage-heading" id="title">Loading model…</h2>
+        <canvas id="view" tabindex="0" data-model-root="../data/models/" data-fit-silhouette data-preview-defaults aria-label="Interactive model. Drag or use the arrow keys to rotate. Scroll or use plus and minus to zoom."></canvas>
+        <img id="model-fallback" src="../images/hero.png" width="1600" height="1000" alt="Su-27 model preview">
+        <div class="stage-tools" aria-label="Camera controls">
+          <button data-camera="yaw" data-amount="-.15" aria-label="Rotate left">←</button><button data-camera="yaw" data-amount=".15" aria-label="Rotate right">→</button>
+          <button data-camera="pitch" data-amount=".15" aria-label="Rotate up">↑</button><button data-camera="pitch" data-amount="-.15" aria-label="Rotate down">↓</button>
+          <button data-camera="zoom" data-amount="1.15" aria-label="Zoom in">+</button><button data-camera="zoom" data-amount=".87" aria-label="Zoom out">−</button>
+        </div>
+        <p class="status" id="status" role="status"></p><p id="viewer-error" class="help"></p>
+      </div>
+      <div class="toolbar">
+        <label><input type="checkbox" id="night"> Night lights</label><label><input type="checkbox" id="spin"> Turntable</label>
+        <label><input type="checkbox" id="perturb" checked> Canopy and effect motion</label>
+        <label><input type="checkbox" id="smooth" checked> Smooth shading</label><label><input type="checkbox" id="edges"> Show edges</label>
+        <label id="effect-framing" hidden><input id="fit-effect" type="checkbox" checked> Fit effect while scrubbing</label>
+        <input id="distance" type="number" value="0" hidden>
+      </div>
+      <p id="model-description" class="model-note"></p>
+      <div id="motion" hidden></div><div id="params" class="model-settings"></div>
+    </div>
+  </div>
+</section>
