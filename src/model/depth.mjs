@@ -68,6 +68,20 @@ function conformOverlay(item, supports) {
     .map(s => s.points)});
 }
 
+// Keep the triangles used by the wall itself, including the Windows meshes
+// whose vertex-normal records repeat the last index.
+export function bindSurfaceDetails(node, markings) {
+  for (const [index, wallIds] of Object.entries(markings)) {
+    const walls = wallIds.map(i => node.surfaces[i]);
+    const mesh = walls.flatMap(wall => {
+      wall.carriesDetail = true;
+      const ids = wall.vertex_normals ? wall.indices.slice(0, -1) : wall.indices;
+      return triangles(ids.map(i => node.vertices[i])).map(face => face.map(j => ids[j]));
+    });
+    node.surfaces[index].wallSupport = {mesh, normal: walls[0].normal};
+  }
+}
+
 // Clip an attached marking against the supporting mesh in its own projection
 // plane, then place each fragment on its support triangle. Moving only the
 // original corners would leave chords buried inside a curved fuselage.
@@ -78,21 +92,27 @@ function meshOverlay(item) {
   const u = normalise(cross(direction, unit)), v = cross(direction, u);
   const project = p => [dot(u, p), dot(v, p)];
   const side = (p, a, b) => (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
-  const result = [], sourceTriangles = triangles(item.points);
+  const result = [], line = item.line;
+  // Clip each length of a door outline separately. Joining just its projected
+  // corners would cut through the wall where the line crosses a triangle seam.
+  const pieces = line
+    ? item.points.slice(0, item.closed ? item.points.length : -1).map((p, i) => [p, item.points[(i + 1) % item.points.length]])
+    : triangles(item.points).map(ids => ids.map(i => item.points[i]));
   for (const support of item.overlayMesh) {
     const surface = plane(support);
     if (!surface) continue;
     const den = dot(surface.n, direction);
     if (Math.abs(den) < .5) continue;
     const border = support.map(project), sign = Math.sign(side(border[2], border[0], border[1]));
-    for (const ids of sourceTriangles) {
-      let points = ids.map(i => item.points[i]);
+    for (const piece of pieces) {
+      let points = piece;
       for (let edge = 0; edge < 3 && points.length; edge++) {
         const a = border[edge], b = border[(edge + 1) % 3], clipped = [];
         for (let i = 0; i < points.length; i++) {
-          const p = points[i], q = points[(i + 1) % points.length];
-          const dp = side(project(p), a, b) * sign, dq = side(project(q), a, b) * sign;
+          const p = points[i], dp = side(project(p), a, b) * sign;
           if (dp >= -1e-7) clipped.push(p);
+          if (line && i === points.length - 1) break;
+          const q = points[(i + 1) % points.length], dq = side(project(q), a, b) * sign;
           if ((dp < -1e-7) !== (dq < -1e-7)) {
             const t = dp / (dp - dq);
             clipped.push(p.map((x, k) => x + t * (q[k] - x)));
@@ -100,10 +120,11 @@ function meshOverlay(item) {
         }
         points = clipped;
       }
-      if (points.length < 3 || !plane(points)) continue;
+      const visible = line ? points.length === 2 && Math.hypot(...sub(points[1], points[0])) > 1e-7 : plane(points);
+      if (!visible) continue;
       const distances = points.map(p => (surface.d - dot(surface.n, p)) / den);
       if (distances.some(t => Math.abs(t) > item.overlayReach)) continue;
-      result.push({...item, decal: true, overlayNormal: null, overlayMesh: null, overlayPlane: support,
+      result.push({...item, decal: true, closed: false, overlayNormal: null, overlayMesh: null, overlayPlane: support,
         points: points.map((p, i) => p.map((x, k) => x + distances[i] * direction[k]))});
     }
   }
@@ -114,7 +135,7 @@ export function depthLayers(items) {
   items = items.flatMap(item => item.overlayMesh ? meshOverlay(item) : item.overlayHost && !item.line && !item.pointCloud && item.points.length >= 3
     ? triangles(item.points).map(ids => ({...item, points: ids.map(i => item.points[i]),
         vertexColours: item.vertexColours && ids.map(i => item.vertexColours[i])})) : [item]);
-  const planes = new Map(), supports = [], prepared = [], result = [];
+  const planes = new Map(), supports = [], linedTriangles = [], prepared = [], result = [];
   const needsSupport = items.some(item => item.overlayNormal);
   let maximum = 0;
   for (const original of items) {
@@ -123,6 +144,7 @@ export function depthLayers(items) {
       // their support before assigning the draw layers.
       const attachmentPlane = item.overlayPlane && plane(item.overlayPlane);
       if (attachmentPlane) {
+        if (item.line) linedTriangles.push(item.overlayPlane);
         const {n, d} = attachmentPlane;
         item = {...item, decal: true, points: item.points.map(p => {
           const offset = d - dot(n, p);
@@ -148,7 +170,10 @@ export function depthLayers(items) {
   prepared.sort((a, b) => Number(!!a.item.decal) - Number(!!b.item.decal));
   for (const {item, p} of prepared) {
     let layer = item.decal ? 1 : 0;
-    const entry = {...item, layer, backLayers: 0};
+    // A line and its wall can sample different positions within one pixel
+    // under MSAA. Give the touched wall triangles one pixel of depth slope.
+    const lined = item.overlayHost && linedTriangles.some(tri => tri.every(v => item.points.includes(v)));
+    const entry = {...item, layer, backLayers: lined ? 2 : 0};
     if (p && !item.line && !item.pointCloud) {
       const box = bounds(item.points, p.axes), group = planes.get(p.key) || [];
       const surface = {box, item: entry, triangles: triangles(item.points).map(ids => ids.map(i => p.axes.map(a => item.points[i][a])))};

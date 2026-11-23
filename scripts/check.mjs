@@ -4,7 +4,8 @@ import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 import {parse} from 'parse5';
 import {spawnSync} from 'node:child_process';
-import {cross,sub,triangles,patternedTriangles,flagOnCloth,random} from '../src/model/shape.mjs';
+import {cross,dot,normalise,sub,triangles,patternedTriangles,flagOnCloth,random} from '../src/model/shape.mjs';
+import {bindSurfaceDetails,depthLayers} from '../src/model/depth.mjs';
 import {parameterDefinitions} from '../src/model/parameter-definitions.mjs';
 const root=path.resolve(fileURLToPath(new URL('../',import.meta.url))),dist=path.join(root,'dist');
 async function walk(dir){const result=[];for(const entry of await readdir(dir,{withFileTypes:true})){const file=path.join(dir,entry.name),s=await lstat(file);assert(!s.isSymbolicLink(),`Symlink in artifact: ${file}`);if(entry.isDirectory())result.push(...await walk(file));else result.push(file);}return result;}
@@ -47,9 +48,34 @@ for (const name of Object.keys(dos.models)) {
   for (const node of shape.nodes) for (const face of node.surfaces)
     if (face.kind===17 && face.reference) assert(available.has(dos.registry[face.reference]),name+' fixed attachment');
 }
+// Length or twice the area viewed along the wall normal. Projecting a
+// marking onto the wall must preserve its complete outline in this plane.
+function markingSize(points, normal, line) {
+  let size = 0;
+  for (let i = 1; i < points.length; i++) {
+    const edge = sub(points[i], points[i - 1]);
+    size += line ? Math.hypot(...cross(normal, edge)) : dot(normal, cross(sub(points[i - 1], points[0]), edge));
+  }
+  return Math.abs(size);
+}
 for (const name of ['katersm4', 'katersm2']) {
   for (const edition of ['', 'dos']) {
     const shape = JSON.parse(await readFile(path.join(dist, 'data/models', edition, name + '.json'), 'utf8'));
+    const cabin = shape.nodes.find(n => n.name === 'Nadstr');
+    const bindings = (edition ? dos : catalog).surface_details[name].Nadstr;
+    bindSurfaceDetails(cabin, bindings);
+    const markings = cabin.surfaces.filter(s => s.wallSupport);
+    assert.equal(markings.filter(s => s.kind === 0).length, 2);
+    assert.equal(markings.filter(s => s.kind === 2).length, 10);
+    for (const face of markings) {
+      const normal = normalise(face.wallSupport.normal), line = face.kind === 0;
+      const ids = face.vertex_normals ? face.indices.slice(0, -1) : face.indices;
+      const points = ids.map(i => cabin.vertices[i]);
+      const mesh = face.wallSupport.mesh.map(tri => tri.map(i => cabin.vertices[i]));
+      const pieces = depthLayers([{points, line, overlayMesh:mesh, overlayNormal:normal, overlayReach:Infinity}]);
+      const fitted = pieces.reduce((total, piece) => total + markingSize(piece.points, normal, line), 0);
+      assert(Math.abs(fitted - markingSize(points, normal, line)) < 1e-5, name + ' incomplete superstructure marking');
+    }
     const hull = shape.nodes[0];
     const rails = hull.surfaces.filter(face => face.indices?.length === 16);
     assert.equal(rails.length, 2, name + ' bow rails');

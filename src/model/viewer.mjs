@@ -1,5 +1,5 @@
 import {createModelBrowser} from './browser.mjs';
-import {depthLayers} from './depth.mjs';
+import {bindSurfaceDetails, depthLayers} from './depth.mjs';
 import {parameterDefinitions, parameterValue} from './parameter-definitions.mjs';
 import {renderParameters} from './parameters.mjs';
 import {createMotionControls, restoreMotionCommands} from './motion.mjs';
@@ -85,6 +85,10 @@ function loadModel(name, source = library) {
       return response.json();
     }).then(model => {
       restoreMotionCommands(model, source.catalog.motion_repairs?.[name]);
+      const details = source.catalog.surface_details?.[name];
+      if (details) for (const node of model.nodes) {
+        if (details[node.name]) bindSurfaceDetails(node, details[node.name]);
+      }
       model.lookup = new Map(model.nodes.map(n => [n.offset, n]));
       models.set(name, model);
       dirty = true;
@@ -121,8 +125,36 @@ function gather(eye, rng = random(phase)) {
         }
       }
       if (!rgb) continue;
-      let vertexColours=null;if(s.vertex_normals&&$('smooth').checked&&(flags&4)){vertexColours=indices.map(i=>{let nv=n.vertices[i+1]||s.normal||[0,16384,0],nn=normalise(direction(m.basis,nv));if(back)nn=nn.map(v=>-v);return material(colour,nn,p,g)||rgb})}let overlay=catalog.surface_overlays?.[model.name]?.[n.name];result.push({points,rgb,vertexColours,pointCloud:s.kind===6,overlayHost,overlayMesh:attachmentOverlay?.mesh,overlayPlane:supportPlane||attachmentOverlay?.cloth,overlayNormal:attachmentOverlay?.normal||(overlay?normalise(direction(m.basis,overlay.normal)):null),overlayReach:attachmentOverlay?.reach??overlay?.reach,decal:s.kind===3,line:s.kind===0||s.kind===1,closed:s.kind===1,pattern,patternBackground,edgeRgb,edge:edgeRgb?s.edge_colour:65535})}}
-visit(selected,0,identity(),parameters,0);stats={parts,hidden,primitives:result.length,missing:[...missing]};return result}
+      let support = attachmentOverlay;
+      if (s.wallSupport) support = {
+        mesh: s.wallSupport.mesh.map(face => face.map(j => vertices[j])),
+        normal: normalise(direction(m.basis, s.wallSupport.normal)),
+        reach: Infinity,
+      };
+      let vertexColours = null;
+      if (s.vertex_normals && $('smooth').checked && (flags & 4)) {
+        vertexColours = indices.map(i => {
+          const vertexNormal = n.vertices[i + 1] || s.normal || [0, 16384, 0];
+          let worldNormal = normalise(direction(m.basis, vertexNormal));
+          if (back) worldNormal = worldNormal.map(v => -v);
+          return material(colour, worldNormal, p, g) || rgb;
+        });
+      }
+      const overlay = catalog.surface_overlays?.[model.name]?.[n.name];
+      result.push({points, rgb, vertexColours,
+        pointCloud: s.kind === 6, decal: s.kind === 3, line: s.kind === 0 || s.kind === 1, closed: s.kind === 1,
+        overlayHost: overlayHost || s.carriesDetail, overlayMesh: support?.mesh,
+        overlayPlane: supportPlane || support?.cloth,
+        overlayNormal: support?.normal || (overlay ? normalise(direction(m.basis, overlay.normal)) : null),
+        overlayReach: support?.reach ?? overlay?.reach,
+        pattern, patternBackground, edgeRgb, edge: edgeRgb ? s.edge_colour : 65535,
+      });
+    }
+  }
+  visit(selected, 0, identity(), parameters, 0);
+  stats = {parts, hidden, primitives: result.length, missing: [...missing]};
+  return result;
+}
 function hasVisibleGeometry(item) {
   const p = item.points;
   if (p.length === 1 || (item.pointCloud && p.length)) return true;
